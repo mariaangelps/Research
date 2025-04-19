@@ -25,8 +25,9 @@ class Robot:
         #destination attibutes
         self.dest_x = None
         self.dest_y = None
-        self.has_destination = False
-        self.max_time = None  # maximum time to arrive
+        self.has_destination = False 
+        self.drive_speed = 0  # Detener movimiento completamente
+        self.max_time = None
         self.destination_timer = 0
 
     def draw(self, screen):
@@ -54,6 +55,8 @@ class Robot:
         self.has_destination=True
         self.max_time = int(time_in_seconds * fps)
         self.destination_timer = 0
+
+    
 
     def get_destination(self):
         if self.has_destination:
@@ -92,11 +95,14 @@ class Robot:
                 
             else:
                 # Update the robot's movement towards the destination
+                print(f"Robot {self.robot_id} is at ({self.x}, {self.y}) → moving to {self.get_destination()}")
                 self.angle = math.atan2(dy, dx)
                 self.drive_speed = self.logic.drive_speed  # or set a fixed speed like 5
 
         else:
-            print(f"Robot {self.robot_id} has no destination currently.")
+            #print(f"Robot {self.robot_id} has no destination currently.")
+            print(f"Robot {self.robot_id} is at ({self.x}, {self.y}) → destination reached ✅")
+
 
 
 
