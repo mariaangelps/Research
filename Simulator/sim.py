@@ -8,6 +8,13 @@ from function_find_background_image import find_background_image
 import mediapipe as mp
 
 
+def assign_destinations(robots_list, destinations, time_in_seconds=5, fps=30):
+    for i, robot in enumerate(robots_list):
+        if i < len(destinations):
+            dest_x, dest_y = destinations[i]
+            robot.set_destination(dest_x, dest_y, time_in_seconds, fps)
+            print(f"Robot {robot.robot_id} → assigned destination: ({dest_x}, {dest_y})")
+
 
 def main():
     print("Sim Begin")
@@ -22,51 +29,43 @@ def main():
 
     background_image_path = find_background_image()
 
-    robot_radius = 20  # Double the robot radius
+    robot_radius = 20
     hand_shadow_radius = 75
-
     n_robots = 5
 
-    robots_list = []
-
-    for robot_id in range(n_robots):
-        x = random.randint(5*robot_radius, arena_width - 5*robot_radius)
-        y = random.randint(5*robot_radius, arena_height - 5*robot_radius)
-        robot = Robot(robot_id, x, y, robot_radius, hand_shadow_radius, robots_list, background_image_path)
-        
-        robots_list.append(robot)
-        destinations = [
+    destinations = [
         (100, 100),
         (200, 200),
         (300, 400),
         (500, 100),
         (600, 800),
     ]
-        def assign_destinations(robots_list, destinations, time_in_seconds=5, fps=30):
-            for i, robot in enumerate(robots_list):
-                if i < len(destinations):
-                    dest_x, dest_y = destinations[i]
-                    robot.set_destination(dest_x, dest_y, time_in_seconds, fps)
-                    print(f"Robot {robot.robot_id} → assigned destination: ({dest_x}, {dest_y})")
+
+    robots_list = []
+    for robot_id in range(n_robots):
+        x = random.randint(5 * robot_radius, arena_width - 5 * robot_radius)
+        y = random.randint(5 * robot_radius, arena_height - 5 * robot_radius)
+        robot = Robot(robot_id, x, y, robot_radius, hand_shadow_radius, robots_list, background_image_path)
+        robots_list.append(robot)
 
     assign_destinations(robots_list, destinations)
 
     cap = cv2.VideoCapture(0)
-
     show_camera_feed = False
-
     background_image = pygame.image.load(background_image_path) if background_image_path else None
 
     print("Enter Main Loop")
+
+    all_arrived_announced = False  # Flag to announce only once
+
     while True:
         ret, frame = cap.read()
-
         if not ret:
             break
 
         frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        frame = cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)  # Rotate video by 90 degrees counterclockwise
-        frame = cv2.resize(frame, (arena_width, arena_height))  # Resize the video to fit the arena
+        frame = cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
+        frame = cv2.resize(frame, (arena_width, arena_height))
 
         hand_coordinates = track_hands(frame, mp_hands, hands)
 
@@ -82,19 +81,23 @@ def main():
         for hand_coord in hand_coordinates:
             pygame.draw.circle(screen, (0, 0, 0), hand_coord, hand_shadow_radius)
 
+        all_arrived = True  # Assume all robots have arrived
+
         for robot in robots_list:
             robot.update(screen, hand_coordinates, arena_width, arena_height)
-
-            current_pos = (robot.x, robot.y)
             if robot.has_destination:
-                print(f"Robot {robot.robot_id} is at {current_pos} → moving to {robot.get_destination()}")
+                print(f"Robot {robot.robot_id} is at ({robot.x}, {robot.y}) → moving to {robot.get_destination()}")
+                all_arrived = False
             else:
-                print(f"Robot {robot.robot_id} is at {current_pos} → destination reached ✅")
+                print(f"Robot {robot.robot_id} is at ({robot.x}, {robot.y}) → destination reached ✅")
 
-        
+        if all_arrived and not all_arrived_announced:
+            print("✅ All robots have reached their destinations!")
+            all_arrived_announced = True
+
+        # Draw toggle button
         button_width, button_height = 100, 40
         button_rect = pygame.Rect(arena_width - button_width - 10, arena_height - button_height - 10, button_width, button_height)
-
         button_text = "Feed" if show_camera_feed else "Feed Off"
         pygame.draw.rect(screen, (100, 100, 100), button_rect)
         button_font = pygame.font.Font(None, 24)
@@ -115,6 +118,3 @@ def main():
 
     cap.release()
     pygame.quit()
-
-if __name__ == "__main__":
-    main()

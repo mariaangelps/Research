@@ -69,14 +69,3 @@ class Logic:
             else:
                 self.state = "moving"
                 self.angle = random.uniform(0, 2 * math.pi)
-
-
-
-
-                       
-            
-
-                    
-
-    
-        
