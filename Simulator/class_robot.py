@@ -39,7 +39,7 @@ class Robot:
                 if abs(self.x - hand_x) <= self.hand_shadow_radius and abs(self.y - hand_y) <= self.hand_shadow_radius:
                     self.under_shadow = True
                     break
-
+    """
     def detect_collision(self):
         self.who_contacting = []
         for robot in self.robots_list:
@@ -48,7 +48,7 @@ class Robot:
                 if distance < self.radius + robot.radius:
                     self.who_contacting.append(robot)
         self.am_contacting = len(self.who_contacting) > 0
-
+    """
     def set_destination(self, x, y, time_in_seconds, fps=30):
         self.dest_x = x
         self.dest_y = y
@@ -63,7 +63,7 @@ class Robot:
 
     def update(self, screen, hand_coordinates, arena_width, arena_height):
         self.detect_hand_shadow(hand_coordinates)
-        self.detect_collision()
+        #self.detect_collision()
 
         if self.has_destination:
             dx = self.dest_x - self.x
@@ -73,6 +73,8 @@ class Robot:
             if distance < self.radius:
                 self.has_destination = False
                 self.drive_speed = 0
+                self.logic.state = "arrived" 
+                print(f"Robot {self.robot_id} → destination reached ✅")
             else:
                 self.angle = math.atan2(dy, dx)
                 self.drive_speed = self.logic.drive_speed

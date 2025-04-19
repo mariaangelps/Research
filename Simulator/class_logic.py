@@ -54,7 +54,14 @@ class Logic:
                 self.angle = random.uniform(0, 2 * math.pi)
 
         # -----------------------------------------------------------------------
-        elif self.state == "bumping":
+        elif self.state == "arrived":
+            self.color = [100, 100, 100]
+            self.drive_speed = 0
+        
+        # -----------------------------------------------------------------------
+        
+        
+        """elif self.state == "bumping":
             # Turn blue, reverse motion for some duration, then choose a random new direction
             self.color = [0, 0, 150]
 
@@ -69,3 +76,5 @@ class Logic:
             else:
                 self.state = "moving"
                 self.angle = random.uniform(0, 2 * math.pi)
+          """
+

@@ -89,7 +89,7 @@ def main():
             if robot.has_destination:
                 print(f"Robot {robot.robot_id} is at {current_pos} → moving to {robot.get_destination()}")
             else:
-                print(f"Robot {robot.robot_id} is at {current_pos} → destination reached ✅")
+                print(f"Robot {robot.robot_id} is at {current_pos} → hola")
 
         
         button_width, button_height = 100, 40
