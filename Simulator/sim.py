@@ -70,6 +70,17 @@ def main():
             if robot.am_contacting:
                 print(f"Robot {robot.robot_id} is contacting robots {', '.join(str(r.robot_id) for r in robot.who_contacting)}")
 
+
+        """ Asignar nuevos destinos aleatorios cada 5 segundos
+        if frame_count % (30 * 5) == 0:  # Cada 5 segundos (30 FPS)
+            for robot in robots_list:
+                rand_x = random.randint(50, arena_width - 50)
+                rand_y = random.randint(50, arena_height - 50)
+                robot.set_destination(rand_x, rand_y, time_in_seconds=4, fps=30)
+
+        frame_count += 1  # Incrementamos el contador de frames
+"""
+
         button_width, button_height = 100, 40
         button_rect = pygame.Rect(arena_width - button_width - 10, arena_height - button_height - 10, button_width, button_height)
 
