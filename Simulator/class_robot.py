@@ -26,11 +26,15 @@ class Robot:
     def draw(self, screen):
         pygame.draw.circle(screen, self.color, (self.x, self.y), self.radius)
 
+    # El programa sabe que el robot está undershadow por esta funcion 
     def detect_hand_shadow(self, hand_coordinates):
+        #si hay al menos una mano detectada, continuamos
         if hand_coordinates:
             # Check if the center of the robot is under the shadow by comparing its position to hand coordinates
             x, y = self.x, self.y
             self.under_shadow = False
+            # Si la mano está dentro de ese cuadrado alrededor del robot, consideramos que el 
+            # robot está bajo una sombra de mano.
             for hand_x, hand_y in hand_coordinates:
                 if abs(x - hand_x) <= self.hand_shadow_radius and abs(y - hand_y) <= self.hand_shadow_radius:
                     self.under_shadow = True
