@@ -7,12 +7,6 @@ from function_track_hands import track_hands
 from function_find_background_image import find_background_image
 import mediapipe as mp
 
-def assign_destinations_to_robots(robots_list, destinations):
-        for i, robot in enumerate(robots_list):
-            dest_x, dest_y = destinations[i % len(destinations)]
-            robot.set_destination(dest_x, dest_y, time_in_seconds=5, fps=30)
-            print(f"Robot {robot.robot_id} → assigned destination: ({dest_x}, {dest_y})")
-
 
 
 def main():
@@ -48,7 +42,14 @@ def main():
         (500, 100),
         (600, 800),
     ]
-    assign_destinations_to_robots(robots_list, destinations)
+        def assign_destinations(robots_list, destinations, time_in_seconds=5, fps=30):
+            for i, robot in enumerate(robots_list):
+                if i < len(destinations):
+                    dest_x, dest_y = destinations[i]
+                    robot.set_destination(dest_x, dest_y, time_in_seconds, fps)
+                    print(f"Robot {robot.robot_id} → assigned destination: ({dest_x}, {dest_y})")
+
+    assign_destinations(robots_list, destinations)
 
     cap = cv2.VideoCapture(0)
 

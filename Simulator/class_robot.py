@@ -56,8 +56,6 @@ class Robot:
         self.max_time = int(time_in_seconds * fps)
         self.destination_timer = 0
 
-    
-
     def get_destination(self):
         if self.has_destination:
             return (self.dest_x, self.dest_y)
@@ -89,19 +87,19 @@ class Robot:
             distance = math.sqrt(dx**2 + dy**2)
 
             if distance < self.radius:
-                print(f"Robot {self.robot_id} has reached its destination at {self.x}, {self.y}")
-                self.has_destination = False  # Stop movement when the destination is reached
-                self.drive_speed = 0
+                if self.has_destination:
+                    print(f"Robot {self.robot_id} is at {self.x}, {self.y}")
+                    self.has_destination = False  # Stop movement when the destination is reached
+                    self.logic.drive_speed = 0
                 
             else:
                 # Update the robot's movement towards the destination
-                print(f"Robot {self.robot_id} is at ({self.x}, {self.y}) → moving to {self.get_destination()}")
                 self.angle = math.atan2(dy, dx)
-                self.drive_speed = self.logic.drive_speed  # or set a fixed speed like 5
+                self.drive_speed = self.logic.drive_speed  
+                print(f"Robot {self.robot_id} is at ({self.x}, {self.y}) → moving to {self.get_destination()}")
 
         else:
-            #print(f"Robot {self.robot_id} has no destination currently.")
-            print(f"Robot {self.robot_id} is at ({self.x}, {self.y}) → destination reached ✅")
+            print(f"Robot {self.robot_id} has no destination currently.")
 
 
 
