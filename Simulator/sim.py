@@ -7,6 +7,14 @@ from function_track_hands import track_hands
 from function_find_background_image import find_background_image
 import mediapipe as mp
 
+def assign_destinations_to_robots(robots_list, destinations):
+        for i, robot in enumerate(robots_list):
+            dest_x, dest_y = destinations[i % len(destinations)]
+            robot.set_destination(dest_x, dest_y, time_in_seconds=5, fps=30)
+            print(f"Robot {robot.robot_id} → assigned destination: ({dest_x}, {dest_y})")
+
+
+
 def main():
     print("Sim Begin")
 
@@ -33,6 +41,14 @@ def main():
         robot = Robot(robot_id, x, y, robot_radius, hand_shadow_radius, robots_list, background_image_path)
         
         robots_list.append(robot)
+        destinations = [
+        (100, 100),
+        (200, 200),
+        (300, 400),
+        (500, 100),
+        (600, 800),
+    ]
+    assign_destinations_to_robots(robots_list, destinations)
 
     cap = cv2.VideoCapture(0)
 
@@ -67,20 +83,14 @@ def main():
 
         for robot in robots_list:
             robot.update(screen, hand_coordinates, arena_width, arena_height)
-            if robot.am_contacting:
-                print(f"Robot {robot.robot_id} is contacting robots {', '.join(str(r.robot_id) for r in robot.who_contacting)}")
 
+            current_pos = (robot.x, robot.y)
+            if robot.has_destination:
+                print(f"Robot {robot.robot_id} is at {current_pos} → moving to {robot.get_destination()}")
+            else:
+                print(f"Robot {robot.robot_id} is at {current_pos} → destination reached ✅")
 
-        """ Asignar nuevos destinos aleatorios cada 5 segundos
-        if frame_count % (30 * 5) == 0:  # Cada 5 segundos (30 FPS)
-            for robot in robots_list:
-                rand_x = random.randint(50, arena_width - 50)
-                rand_y = random.randint(50, arena_height - 50)
-                robot.set_destination(rand_x, rand_y, time_in_seconds=4, fps=30)
-
-        frame_count += 1  # Incrementamos el contador de frames
-"""
-
+        
         button_width, button_height = 100, 40
         button_rect = pygame.Rect(arena_width - button_width - 10, arena_height - button_height - 10, button_width, button_height)
 

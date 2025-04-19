@@ -23,7 +23,6 @@ class Robot:
         self.logic = Logic(self.angle, "moving")  # Start the state machine in the "moving" state
 
         #destination attibutes
-
         self.dest_x = None
         self.dest_y = None
         self.has_destination = False
@@ -49,12 +48,18 @@ class Robot:
 
 
     # calculate destiantion time coverting time in s to frame per second for optimization
-    def set_destination(self,x,y,time_in_Seconds,fps=30):
+    def set_destination(self,x,y,time_in_seconds,fps=30):
         self.dest_x=x
         self.dest_y=y
         self.has_destination=True
         self.max_time = int(time_in_seconds * fps)
         self.destination_timer = 0
+
+    def get_destination(self):
+        if self.has_destination:
+            return (self.dest_x, self.dest_y)
+        else:
+            return None 
 
     def detect_collision(self):
         # Check for collisions with other robots in the robots_list
@@ -80,23 +85,33 @@ class Robot:
             dy = self.dest_y - self.y
             distance = math.sqrt(dx**2 + dy**2)
 
-            # Si ya llegó o se pasó el tiempo
-            if distance < self.radius or self.destination_timer > self.max_time:
-                self.has_destination = False
+            if distance < self.radius:
+                print(f"Robot {self.robot_id} has reached its destination at {self.x}, {self.y}")
+                self.has_destination = False  # Stop movement when the destination is reached
                 self.drive_speed = 0
+                
             else:
+                # Update the robot's movement towards the destination
                 self.angle = math.atan2(dy, dx)
-                self.drive_speed = self.logic.drive_speed  # o fija una velocidad como 5
+                self.drive_speed = self.logic.drive_speed  # or set a fixed speed like 5
+
         else:
-            if self.background_image:
-                pixel_color = self.background_image.get_at((self.x, self.y))
-            else:
+            print(f"Robot {self.robot_id} has no destination currently.")
+
+
+
+
+
+
+        if self.background_image:
+            pixel_color = self.background_image.get_at((self.x, self.y))
+        else:
                 pixel_color = (0, 0, 0)  # color neutro por si no hay fondo
-            # Logic
-            self.logic.update(self.am_contacting, self.who_contacting, pixel_color, self.under_shadow)
-            self.drive_speed = self.logic.get_drive_speed()
-            self.angle = self.logic.get_angle()
-            self.color = self.logic.get_color()
+        # Logic
+        self.logic.update(self.am_contacting, self.who_contacting, pixel_color, self.under_shadow)
+        self.drive_speed = self.logic.get_drive_speed()
+        self.angle = self.logic.get_angle()
+        self.color = self.logic.get_color()
 
         # Movement and outputs
         self.x += int(self.drive_speed * math.cos(self.angle))
