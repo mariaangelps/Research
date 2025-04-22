@@ -74,7 +74,7 @@ class Robot:
                 self.has_destination = False
                 self.drive_speed = 0
                 self.logic.state = "arrived" 
-                print(f"Robot {self.robot_id} → destination reached ✅")
+                print(f"Robot {self.robot_id} → destination reached ")
             else:
                 self.angle = math.atan2(dy, dx)
                 self.drive_speed = self.logic.drive_speed
