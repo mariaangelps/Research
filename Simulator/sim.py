@@ -13,7 +13,7 @@ def main():
     print("Sim Begin")
 
     pygame.init()
-    arena_width, arena_height = 900, 900
+    arena_width, arena_height = 900, 400
     screen = pygame.display.set_mode((arena_width, arena_height))
     pygame.display.set_caption("Robot Arena")
 
@@ -29,13 +29,8 @@ def main():
 
     robots_list = []
 
-    def assign_destinations(robots_list, destinations, time_in_seconds=5, fps=30):
-            for i, robot in enumerate(robots_list):
-                if i < len(destinations):
-                    dest_x, dest_y = destinations[i]
-                    robot.set_destination(dest_x, dest_y, time_in_seconds, fps)
-                    print(f"Robot {robot.robot_id} → assigned destination: ({dest_x}, {dest_y})")
-                    
+    
+
     for robot_id in range(n_robots):
         x = random.randint(5*robot_radius, arena_width - 5*robot_radius)
         y = random.randint(5*robot_radius, arena_height - 5*robot_radius)
@@ -50,7 +45,12 @@ def main():
         (600, 800),
     ]
         
-
+    def assign_destinations(robots_list, destinations, time_in_seconds=5, fps=60):
+            for i, robot in enumerate(robots_list):
+                if i < len(destinations):
+                    dest_x, dest_y = destinations[i]
+                    robot.set_destination(dest_x, dest_y, time_in_seconds, fps)
+                    print(f"Robot {robot.robot_id} → assigned destination: ({dest_x}, {dest_y})")
     assign_destinations(robots_list, destinations)
 
     cap = cv2.VideoCapture(0)
