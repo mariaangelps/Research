@@ -39,7 +39,7 @@ class Robot:
                 if abs(self.x - hand_x) <= self.hand_shadow_radius and abs(self.y - hand_y) <= self.hand_shadow_radius:
                     self.under_shadow = True
                     break
-    """
+    
     def detect_collision(self):
         self.who_contacting = []
         for robot in self.robots_list:
@@ -48,7 +48,7 @@ class Robot:
                 if distance < self.radius + robot.radius:
                     self.who_contacting.append(robot)
         self.am_contacting = len(self.who_contacting) > 0
-    """
+    
     def set_destination(self, x, y, time_in_seconds, fps=30):
         self.dest_x = x
         self.dest_y = y
@@ -63,7 +63,7 @@ class Robot:
 
     def update(self, screen, hand_coordinates, arena_width, arena_height):
         self.detect_hand_shadow(hand_coordinates)
-        #self.detect_collision()
+        self.detect_collision()
 
         if self.has_destination:
             dx = self.dest_x - self.x
@@ -104,3 +104,14 @@ class Robot:
         self.y = max(self.radius, min(arena_height - self.radius, self.y))
 
         self.draw(screen)
+
+    #added debugging reached 
+    def reached_destination(self):
+        if not self.has_destination:
+            return False
+        dx = self.dest_x - self.x
+        dy = self.dest_y - self.y
+        distance = math.sqrt(dx**2 + dy**2)
+        return distance < self.radius  # Se considera que llegó si está dentro de su propio radio
+
+    

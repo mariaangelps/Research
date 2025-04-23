@@ -29,6 +29,13 @@ def main():
 
     robots_list = []
 
+    def assign_destinations(robots_list, destinations, time_in_seconds=5, fps=30):
+            for i, robot in enumerate(robots_list):
+                if i < len(destinations):
+                    dest_x, dest_y = destinations[i]
+                    robot.set_destination(dest_x, dest_y, time_in_seconds, fps)
+                    print(f"Robot {robot.robot_id} → assigned destination: ({dest_x}, {dest_y})")
+                    
     for robot_id in range(n_robots):
         x = random.randint(5*robot_radius, arena_width - 5*robot_radius)
         y = random.randint(5*robot_radius, arena_height - 5*robot_radius)
@@ -42,12 +49,7 @@ def main():
         (500, 100),
         (600, 800),
     ]
-        def assign_destinations(robots_list, destinations, time_in_seconds=5, fps=30):
-            for i, robot in enumerate(robots_list):
-                if i < len(destinations):
-                    dest_x, dest_y = destinations[i]
-                    robot.set_destination(dest_x, dest_y, time_in_seconds, fps)
-                    print(f"Robot {robot.robot_id} → assigned destination: ({dest_x}, {dest_y})")
+        
 
     assign_destinations(robots_list, destinations)
 
@@ -86,10 +88,16 @@ def main():
             robot.update(screen, hand_coordinates, arena_width, arena_height)
 
             current_pos = (robot.x, robot.y)
+            #debugging to see in which state it is at
+            print(f"Robot {robot.robot_id} is in state → {robot.logic.state}")
+
             if robot.has_destination:
-                print(f"Robot {robot.robot_id} is at {current_pos} → moving to {robot.get_destination()}")
+                if robot.reached_destination():
+                    print(f"Robot {robot.robot_id} reached  at {current_pos} ")
+                else:
+                    print(f"Robot {robot.robot_id} is at {current_pos} → moving to {robot.get_destination()}")
             else:
-                print(f"Robot {robot.robot_id} is at {current_pos} → hola")
+                print(f"Robot {robot.robot_id} is at {current_pos}")
 
         
         button_width, button_height = 100, 40

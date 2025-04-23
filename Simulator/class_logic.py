@@ -1,6 +1,5 @@
 import random
 import math
-
 class Logic:
     def __init__(self, angle, start_state):
         self.state = start_state
@@ -8,8 +7,9 @@ class Logic:
         self.angle = angle
         self.color = [0, 0, 0]
         self.timer = 0
-        self.config_reverse_time = 5
-        
+        self.config_reverse_time = 15
+        self.max_bumping_time = 100  # New maximum time for "bumping"
+
     def get_drive_speed(self):
         return self.drive_speed
     
@@ -21,18 +21,16 @@ class Logic:
     
     def update(self, am_contacting, who_contacting, pixel_color, under_shadow):
         # Basic stuff
-        self.timer = self.timer + 1
+        self.timer += 1
 
-        # -----------------------------------------------------------------------
         # Finite state machine logic
         if self.state == "moving":
-            # Turn green, and move until hitting either another robot or a projected-light color or shadow
             self.color = [0, 150, 0]
             self.drive_speed = 8
 
-            # Stop moving if under shadow
             if under_shadow:
                 self.state = "under_shadow"
+                self.timer = 0  # Reset timer when entering under_shadow state
             elif am_contacting:
                 self.state = "bumping"
                 self.timer = 0
@@ -44,25 +42,19 @@ class Logic:
                 if pixel_color == (0, 0, 255):
                     self.angle = -self.angle  # Reflect vertically
 
-        # -----------------------------------------------------------------------
         elif self.state == "under_shadow":
-            # Turn red and stop until no longer under shadow, then resume motion in a random direction
             self.color = [150, 0, 0]
             self.drive_speed = 0
             if not under_shadow:
                 self.state = "moving"
                 self.angle = random.uniform(0, 2 * math.pi)
+                self.timer = 0  # Reset timer when leaving under_shadow state
 
-        # -----------------------------------------------------------------------
         elif self.state == "arrived":
             self.color = [100, 100, 100]
             self.drive_speed = 0
-        
-        # -----------------------------------------------------------------------
-        
-        
-        """elif self.state == "bumping":
-            # Turn blue, reverse motion for some duration, then choose a random new direction
+
+        elif self.state == "bumping":
             self.color = [0, 0, 150]
 
             if self.timer < self.config_reverse_time:
@@ -74,7 +66,8 @@ class Logic:
                 if pixel_color == (0, 0, 150):
                     self.angle = -self.angle  # Reflect vertically
             else:
+                # After reverse time, resume moving
                 self.state = "moving"
                 self.angle = random.uniform(0, 2 * math.pi)
-          """
-
+                self.angle += math.radians(random.randint(-45, 45))
+                self.timer = 0  # Reset timer when transitioning back to "moving"
