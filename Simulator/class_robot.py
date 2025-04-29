@@ -2,7 +2,6 @@ import pygame
 import math
 import random
 from class_logic import Logic
-
 class Robot:
     def __init__(self, robot_id, x, y, radius):
         self.robot_id = robot_id
@@ -17,61 +16,47 @@ class Robot:
         self.dest_x = None
         self.dest_y = None
         self.has_destination = False
-        self.previous_dest = None  # Keep track of the last destination to avoid repetition
-
-    def draw(self, screen):
-        pygame.draw.circle(screen, self.color, (int(self.x), int(self.y)), self.radius)
+        self.arrival_time = None  # Store the time when the destination is reached
+        self.wait_time = 3000  # 3 seconds in milliseconds
 
     def set_destination(self, x, y):
         self.dest_x = x
         self.dest_y = y
         self.has_destination = True
+        self.arrival_time = None  # Reset arrival time when a new destination is set
 
-    def update(self, screen, arena_width, arena_height, destinations):
+    def update(self, screen, arena_width, arena_height):
         if self.has_destination:
-            pygame.draw.circle(screen, (255, 0, 0), (self.dest_x, self.dest_y), 5)
+            dx = self.dest_x - self.x
+            dy = self.dest_y - self.y
+            distance = math.hypot(dx, dy)
 
-            #self.x is current position
-            #self.dest_x is the destination location for x
-            dx = self.dest_x - self.x  # Distance in x
-            dy = self.dest_y - self.y  # Distance in y
-            distance = math.sqrt(dx**2 + dy**2)  # Calculate the Euclidean distance
-
-            # Check if the robot has reached the destination
             if distance < self.radius:
-                print(f"Robot {self.robot_id} → destination reached at {self.x} and {self.y}")
-                self.has_destination = False  # Mark destination as reached
-                self.logic.drive_speed = 0  # Stop the robot
-                self.assign_new_destination(destinations)  # Assign a new destination once the current one is reached
+                if self.arrival_time is None:
+                    self.arrival_time = pygame.time.get_ticks()  # Capture arrival time
+                    print(f"Robot {self.robot_id} → destination reached at {self.x}, {self.y}")
+
+                # Check if enough time has passed to set a new destination
+                if pygame.time.get_ticks() - self.arrival_time >= self.wait_time:
+                    self.has_destination = False
+                    print(f"Robot {self.robot_id} → ready for new destination")
             else:
-                # Move towards the destination by calculating the angle and updating position
-                self.angle = math.atan2(dy, dx)  # Calculate the angle to the destination
+                self.angle = math.atan2(dy, dx)
                 self.logic.angle = self.angle  # Update logic angle
+                speed = self.logic.get_drive_speed()
+                self.x += int(speed * math.cos(self.angle))
+                self.y += int(speed * math.sin(self.angle))
 
-                # Update the position
-                speed = self.logic.get_drive_speed()  # Get the current speed from the logic
-                self.x += int(speed * math.cos(self.angle))  # Move in the x direction
-                self.y += int(speed * math.sin(self.angle))  # Move in the y direction
-
-        # Keep the robot within bounds of the arena
+        # Keep inside bounds
         self.x = max(self.radius, min(arena_width - self.radius, self.x))
         self.y = max(self.radius, min(arena_height - self.radius, self.y))
 
-        self.draw(screen)  # Draw the robot on the screen
+        # Draw the robot and its destination
+        self.color = self.logic.get_color()
+        self.draw(screen)
 
+        if self.has_destination:
+            pygame.draw.circle(screen, (255, 0, 0), (int(self.dest_x), int(self.dest_y)), 5)
 
-    def assign_new_destination(self, destinations):
-        if not self.has_destination:  # Only assign a new destination if no current one
-            if destinations:
-                # Filter out destinations that have been already assigned or recently visited
-                available_destinations = [dest for dest in destinations if dest != self.previous_dest]
-                
-                if available_destinations:
-                    new_dest = random.choice(available_destinations)
-                    print(f"Robot {self.robot_id} → assigned new destination: {new_dest}")
-                    self.set_destination(new_dest[0], new_dest[1])  # Assign a new random destination
-                    self.previous_dest = new_dest  # Update the previous destination
-                else:
-                    print(f"Robot {self.robot_id} → resetting available destinations.")
-                    self.previous_dest = None  # Reset previous destination if no options left
-                    self.assign_new_destination(destinations)  # Retry with all available destinations
+    def draw(self, screen):
+        pygame.draw.circle(screen, self.color, (self.x, self.y), self.radius)
