@@ -1,7 +1,7 @@
 import pygame
 import math
-from class_logic import Logic
 import random
+from class_logic import Logic
 
 class Robot:
     def __init__(self, robot_id, x, y, radius):
@@ -9,12 +9,15 @@ class Robot:
         self.x = x
         self.y = y
         self.radius = radius
-        self.color = (0, 150, 0)
+        self.color = (0, 150, 0)  # Default color
         self.angle = random.uniform(0, 2 * math.pi)
         self.logic = Logic(self.angle)
+
+        # Destination attributes
         self.dest_x = None
         self.dest_y = None
         self.has_destination = False
+        self.previous_dest = None  # Keep track of the last destination to avoid repetition
 
     def draw(self, screen):
         pygame.draw.circle(screen, self.color, (int(self.x), int(self.y)), self.radius)
@@ -24,49 +27,51 @@ class Robot:
         self.dest_y = y
         self.has_destination = True
 
-    def reached_destination(self):
-        if not self.has_destination:
-            return "No destination set"
-        dx = self.dest_x - self.x
-        dy = self.dest_y - self.y
-        distance = math.hypot(dx, dy)
-        if distance < self.radius:
-            return f"Reached destination: ({self.dest_x}, {self.dest_y})"
-        else:
-            return f"Moving towards: ({self.dest_x}, {self.dest_y})"
+    def update(self, screen, arena_width, arena_height, destinations):
+        if self.has_destination:
+            pygame.draw.circle(screen, (255, 0, 0), (self.dest_x, self.dest_y), 5)
 
-    def update(self, screen, arena_width, arena_height, my_position, goal_position):
-        my_x, my_y = my_position
-        goal_x, goal_y = goal_position
-        
-        # Calcular la diferencia entre las posiciones
-        dx = goal_x - my_x
-        dy = goal_y - my_y
-        distance = math.hypot(dx, dy)
+            #self.x is current position
+            #self.dest_x is the destination location for x
+            dx = self.dest_x - self.x  # Distance in x
+            dy = self.dest_y - self.y  # Distance in y
+            distance = math.sqrt(dx**2 + dy**2)  # Calculate the Euclidean distance
 
-        if distance < self.radius:
-            self.has_destination = False
-            self.logic.drive_speed = 0
-            print(f"Robot {self.robot_id} → destination reached")
-        else:
-            # Actualizar el ángulo con la lógica
-            self.logic.update(dx, dy)
-            self.angle = self.logic.get_angle()  # Obtener el ángulo actualizado
-            
-            # Mover el robot hacia el destino
-            speed = self.logic.get_drive_speed()
-            my_x += int(speed * math.cos(self.angle))
-            my_y += int(speed * math.sin(self.angle))
+            # Check if the robot has reached the destination
+            if distance < self.radius:
+                print(f"Robot {self.robot_id} → destination reached at {self.x} and {self.y}")
+                self.has_destination = False  # Mark destination as reached
+                self.logic.drive_speed = 0  # Stop the robot
+                self.assign_new_destination(destinations)  # Assign a new destination once the current one is reached
+            else:
+                # Move towards the destination by calculating the angle and updating position
+                self.angle = math.atan2(dy, dx)  # Calculate the angle to the destination
+                self.logic.angle = self.angle  # Update logic angle
 
-        # Asegurarse de que el robot no se salga del área
-        my_x = max(self.radius, min(arena_width - self.radius, my_x))
-        my_y = max(self.radius, min(arena_height - self.radius, my_y))
+                # Update the position
+                speed = self.logic.get_drive_speed()  # Get the current speed from the logic
+                self.x += int(speed * math.cos(self.angle))  # Move in the x direction
+                self.y += int(speed * math.sin(self.angle))  # Move in the y direction
 
-        # Actualizar las coordenadas del robot
-        self.x = my_x
-        self.y = my_y
-        
-        self.draw(screen)
+        # Keep the robot within bounds of the arena
+        self.x = max(self.radius, min(arena_width - self.radius, self.x))
+        self.y = max(self.radius, min(arena_height - self.radius, self.y))
 
-        
+        self.draw(screen)  # Draw the robot on the screen
 
+
+    def assign_new_destination(self, destinations):
+        if not self.has_destination:  # Only assign a new destination if no current one
+            if destinations:
+                # Filter out destinations that have been already assigned or recently visited
+                available_destinations = [dest for dest in destinations if dest != self.previous_dest]
+                
+                if available_destinations:
+                    new_dest = random.choice(available_destinations)
+                    print(f"Robot {self.robot_id} → assigned new destination: {new_dest}")
+                    self.set_destination(new_dest[0], new_dest[1])  # Assign a new random destination
+                    self.previous_dest = new_dest  # Update the previous destination
+                else:
+                    print(f"Robot {self.robot_id} → resetting available destinations.")
+                    self.previous_dest = None  # Reset previous destination if no options left
+                    self.assign_new_destination(destinations)  # Retry with all available destinations

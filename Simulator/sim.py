@@ -1,5 +1,6 @@
 import pygame
 import random
+import math
 from class_robot import Robot
 
 def main():
@@ -10,7 +11,7 @@ def main():
     screen = pygame.display.set_mode((arena_width, arena_height))
     pygame.display.set_caption("Robot Arena")
 
-    robot_radius = 20
+    robot_radius = 10
     n_robots = 5
     robots_list = []
 
@@ -28,26 +29,24 @@ def main():
         (600, 300),
     ]
 
-    # Optional: assign once at the beginning
-    for i, robot in enumerate(robots_list):
-        if i < len(destinations):
-            robot.set_destination(*destinations[i])
-            print(f"Robot {robot.robot_id} → assigned destination: {destinations[i]}")
+    def assign_destinations(robots_list, destinations):
+        for i, robot in enumerate(robots_list):
+            if i < len(destinations):
+                dest_x, dest_y = destinations[i]
+                robot.set_destination(dest_x, dest_y)
+                print(f"Robot {robot.robot_id} → assigned destination: ({dest_x}, {dest_y})")
+
+    assign_destinations(robots_list, destinations)
 
     print("Enter Main Loop")
     running = True
-    clock = pygame.time.Clock()
-
     while running:
-        screen.fill((255, 255, 255))  # White background
+        screen.fill((255, 255, 255))  # Plain white background
 
         for robot in robots_list:
-            my_position = (robot.x, robot.y)
-            goal_position = (robot.dest_x, robot.dest_y)
-            robot.update(screen, arena_width, arena_height, my_position, goal_position)
+            robot.update(screen, arena_width, arena_height, destinations)
 
         pygame.display.flip()
-        clock.tick(60)
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
