@@ -41,7 +41,7 @@ def main():
     print("Enter Main Loop")
     running = True
     while running:
-        screen.fill((255, 255, 255))  # Plain white background
+        screen.fill((255, 255, 255))  
 
         for robot in robots_list:
             robot.update(screen, arena_width, arena_height, destinations)
