@@ -2,7 +2,7 @@ import pygame
 import random
 import math
 from class_robot import Robot
-
+#OPTION 1 : SEQUENTIAL 0,1,2,3,4, ends when i terminate the program
 def main():
     print("Sim Begin")
 

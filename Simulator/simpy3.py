@@ -1,9 +1,8 @@
 import pygame
 import random
 import math
-from class_robot2 import Robot
-
-#OPTION 2: same as first but not sequential, ends when i terminate the program
+from class_robot3 import Robot  
+# OPTION 3: sequential bit ends when last robot reaches its destination
 
 def main():
     print("Sim Begin")
@@ -42,17 +41,35 @@ def main():
 
     print("Enter Main Loop")
     running = True
+    current_robot_index = 0  # Solo uno se mueve a la vez
+
     while running:
         screen.fill((255, 255, 255))  
 
-        for robot in robots_list:
+        # Actualizar solo el robot actual
+        if current_robot_index < len(robots_list):
+            robot = robots_list[current_robot_index]
             robot.update(screen, arena_width, arena_height, destinations)
+
+            if robot.ready_for_next:
+                print(f"Robot {robot.robot_id} reached its destination.")
+                current_robot_index += 1  # Pasar al siguiente robot
+
+        # Dibujar todos los robots (solo uno se mueve, los otros se quedan quietos)
+        for robot in robots_list:
+            robot.draw(screen)
 
         pygame.display.flip()
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
+
+        # Si todos terminaron
+        if current_robot_index >= len(robots_list):
+            print("All robots completed their destinations. Exiting simulation.")
+            pygame.time.wait(2000)
+            running = False
 
     pygame.quit()
 
