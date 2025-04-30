@@ -1,7 +1,7 @@
 import pygame
 import random
 import math
-from class_robot import Robot  # Usa class_robot que tú tengas
+from class_robot import Robot
 
 def main():
     print("Sim Begin")
@@ -21,54 +21,43 @@ def main():
         robot = Robot(robot_id, x, y, robot_radius)
         robots_list.append(robot)
 
-    destinations = [
-        (100, 100),
-        (200, 200),
-        (300, 300),
-        (500, 100),
-        (600, 300),
-    ]
+    def assign_new_random_destination(robot):
+        x = random.randint(5 * robot_radius, arena_width - 5 * robot_radius)
+        y = random.randint(5 * robot_radius, arena_height - 5 * robot_radius)
+        robot.set_destination(x, y)
+        robot.ready_for_next = False
+        print(f"Robot {robot.robot_id} → new destination: ({x}, {y})")
 
-    def assign_destinations(robots_list, destinations):
-        for i, robot in enumerate(robots_list):
-            if i < len(destinations):
-                dest_x, dest_y = destinations[i]
-                robot.set_destination(dest_x, dest_y)
-                print(f"Robot {robot.robot_id} → assigned destination: ({dest_x}, {dest_y})")
-
-    assign_destinations(robots_list, destinations)
+    # Inicialmente todos los robots tienen un destino asignado, pero solo el primero se moverá
+    for i, robot in enumerate(robots_list):
+        assign_new_random_destination(robot)
+    current_robot_index = 0
 
     print("Enter Main Loop")
     running = True
-    current_robot_index = 0  # Solo uno se mueve a la vez
 
     while running:
-        screen.fill((255, 255, 255))  
+        screen.fill((255, 255, 255))
 
-        # Actualizar solo el robot actual
-        if current_robot_index < len(robots_list):
-            robot = robots_list[current_robot_index]
-            robot.update(screen, arena_width, arena_height, destinations)
+        # Solo mueve el robot activo
+        robot = robots_list[current_robot_index]
+        robot.update(screen, arena_width, arena_height)
 
-            if robot.ready_for_next:
-                print(f"Robot {robot.robot_id} reached its destination.")
-                current_robot_index += 1  # Pasar al siguiente robot
+        # Si llegó a destino, asigna uno nuevo y pasa al siguiente robot
+        if robot.ready_for_next:
+            print(f"Robot {robot.robot_id} reached its destination.")
+            assign_new_random_destination(robot)
+            current_robot_index = (current_robot_index + 1) % len(robots_list)
 
-        # Dibujar todos los robots (solo uno se mueve, los otros se quedan quietos)
-        for robot in robots_list:
-            robot.draw(screen)
+        # Dibuja todos
+        for r in robots_list:
+            r.draw(screen)
 
         pygame.display.flip()
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
-
-        # Si todos terminaron
-        if current_robot_index >= len(robots_list):
-            print("All robots completed their destinations. Exiting simulation.")
-            pygame.time.wait(2000)
-            running = False
 
     pygame.quit()
 
