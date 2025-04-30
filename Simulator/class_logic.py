@@ -3,8 +3,8 @@ import math
 class Logic:
     def __init__(self, angle):
         self.angle = angle
-        self.drive_speed = 2
-        self.color = [0, 150, 0]  # Always green while moving
+        self.drive_speed = 4
+        self.color = [0, 150, 0]  #green while moving
 
     def get_drive_speed(self):
         return self.drive_speed
@@ -16,9 +16,9 @@ class Logic:
         return self.color
 
     def update(self, dx, dy):
-        # Update the angle towards the target
+        # angle towards the target
         self.angle = math.atan2(dy, dx)
-        # You could add more logic here for speed adjustment (e.g., acceleration, friction, etc.)
+        
 
     def reset_speed(self):
         self.drive_speed = 3
