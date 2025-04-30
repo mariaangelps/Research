@@ -1,8 +1,8 @@
 import pygame
 import random
 import math
-from class_robot import Robot
-#sequential, each running in order
+from class_robot import Robot  # Usa class_robot que tú tengas
+
 def main():
     print("Sim Begin")
 
@@ -40,40 +40,35 @@ def main():
 
     print("Enter Main Loop")
     running = True
-    current_robot_index = 0  # Start with the first robot
-    all_robots_completed = False  # Flag to check if all robots have completed their destinations
+    current_robot_index = 0  # Solo uno se mueve a la vez
 
     while running:
-        screen.fill((255, 255, 255))
+        screen.fill((255, 255, 255))  
 
-        # Only update the current robot that is in the process of moving
-        robots_list[current_robot_index].update(screen, arena_width, arena_height, destinations)
+        # Actualizar solo el robot actual
+        if current_robot_index < len(robots_list):
+            robot = robots_list[current_robot_index]
+            robot.update(screen, arena_width, arena_height, destinations)
 
-        # Draw all robots on screen
+            if robot.ready_for_next:
+                print(f"Robot {robot.robot_id} reached its destination.")
+                current_robot_index += 1  # Pasar al siguiente robot
+
+        # Dibujar todos los robots (solo uno se mueve, los otros se quedan quietos)
         for robot in robots_list:
             robot.draw(screen)
 
-        # Check if the current robot has finished its destination
-        if robots_list[current_robot_index].ready_for_next:
-            # Assign a new destination to the current robot
-            robots_list[current_robot_index].assign_new_destination(destinations)
-
-            # Move to the next robot in the list (sequentially)
-            current_robot_index = (current_robot_index + 1) % len(robots_list)
-
-        # Check if all robots have completed their journey
-        all_robots_completed = all(robot.ready_for_next for robot in robots_list)
-
-        if all_robots_completed:
-            print("All robots have completed their destinations. Exiting simulation.")
-            running = False
-
         pygame.display.flip()
 
-        # Check for quit event
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
+
+        # Si todos terminaron
+        if current_robot_index >= len(robots_list):
+            print("All robots completed their destinations. Exiting simulation.")
+            pygame.time.wait(2000)
+            running = False
 
     pygame.quit()
 
