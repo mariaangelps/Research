@@ -22,11 +22,12 @@ class Robot:
         self.previous_dest = None
 
     def draw(self, screen):
+    # Dibuja el robot como un círculo verde
         pygame.draw.circle(screen, self.color, (int(self.x), int(self.y)), self.radius)
-    
+        
+        # Dibuja el destino como un pequeño punto rojo si tiene uno
         if self.has_destination and self.dest_x is not None and self.dest_y is not None:
             pygame.draw.circle(screen, (255, 0, 0), (int(self.dest_x), int(self.dest_y)), 5)
-
 
     def set_destination(self, x, y):
         self.dest_x = x
@@ -48,8 +49,7 @@ class Robot:
                     self.wait_start_time = pygame.time.get_ticks()
                     self.logic.drive_speed = 0
                 else:
-                    #time in miliseconds 1500 ->1.5 sec
-                    if pygame.time.get_ticks() - self.wait_start_time >= 1500:
+                    if pygame.time.get_ticks() - self.wait_start_time >= 1200:
                         self.has_destination = False
                         self.ready_for_next = True
             else:
