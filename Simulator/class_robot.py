@@ -10,7 +10,7 @@ class Robot:
         self.radius = radius
         self.color = (0, 0, 255)
         self.destination = (x, y)
-        self.speed = 4
+        self.speed = 2
         self.ready_for_next = False
 
     def set_destination(self, x, y):

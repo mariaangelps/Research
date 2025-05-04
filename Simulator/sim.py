@@ -12,18 +12,18 @@ def main():
     pygame.display.set_caption("Robot Arena")
 
     robot_radius = 10
-    n_robots = 5
+    n_robots = 7
     robots_list = []
 
     for robot_id in range(n_robots):
-        x = random.randint(5 * robot_radius, arena_width - 5 * robot_radius)
-        y = random.randint(5 * robot_radius, arena_height - 5 * robot_radius)
+        x = random.randint(7 * robot_radius, arena_width - 5 * robot_radius)
+        y = random.randint(7* robot_radius, arena_height - 5 * robot_radius)
         robot = Robot(robot_id, x, y, robot_radius)
         robots_list.append(robot)
 
     def assign_new_random_destination(robot):
-        x = random.randint(5 * robot_radius, arena_width - 5 * robot_radius)
-        y = random.randint(5 * robot_radius, arena_height - 5 * robot_radius)
+        x = random.randint(7 * robot_radius, arena_width - 5 * robot_radius)
+        y = random.randint(7 * robot_radius, arena_height - 5 * robot_radius)
         robot.set_destination(x, y)
         robot.ready_for_next = False
         print(f"Robot {robot.robot_id} → new destination: ({x}, {y})")
