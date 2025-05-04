@@ -1,4 +1,5 @@
 import pygame
+import random
 import math
 from class_robot import Robot
 from class_source_and_demand import Source, Demand
@@ -8,18 +9,14 @@ def distance(a, b):
 
 def connect_robots(robot_a, robot_b):
     new_connection = False
-
     if robot_b not in robot_a.connected_to:
         robot_a.connected_to.append(robot_b)
         new_connection = True
-
     if robot_a not in robot_b.connected_to:
         robot_b.connected_to.append(robot_a)
         new_connection = True
-
     if new_connection:
         print(f"Robots {robot_a.robot_id} and {robot_b.robot_id} are now connected")
-
     robot_a.moving = False
     robot_b.moving = False
 
@@ -51,8 +48,16 @@ def main():
     source = Source("Source", 100, 250, 25)
     demand = Demand("Demand", 900, 250, 25)
 
-    # Puedes ajustar estas posiciones si quieres que empiecen más separados
-    positions = [(200, 250), (300, 250), (400, 250), (500, 250), (600, 250)]
+    # Posiciones dispersas
+    # Generar posiciones aleatorias dentro del área (arena)
+    positions = []
+    while len(positions) < n_robots:
+        x = random.randint(100, 900)
+        y = random.randint(100, 400)
+        too_close = any(math.hypot(x - px, y - py) < 80 for px, py in positions)
+        if not too_close:
+            positions.append((x, y))
+
     for i in range(n_robots):
         x, y = positions[i]
         robot = Robot(i, x, y, robot_radius)
@@ -71,12 +76,10 @@ def main():
             if event.type == pygame.QUIT:
                 running = False
 
-        # Mover robots si están activos
         for robot in robots_list:
             if robot.moving:
                 robot.update()
 
-        # Robot 0 se conecta a la fuente si está cerca
         if distance(robots_list[0], source) < connection_distance:
             if source not in robots_list[0].connected_to:
                 robots_list[0].connected_to.append(source)
@@ -84,24 +87,26 @@ def main():
                 print("Robot 0 connected to Source")
                 propagate_source_connection(robots_list[0])
 
-        # Robot 4 se conecta a la demanda después de unos frames
-        if frame_counter > 100:
+        if frame_counter > 150:
             if demand not in robots_list[4].connected_to:
                 robots_list[4].connected_to.append(demand)
                 robots_list[4].moving = False
                 print("Robot 4 connected to Demand")
 
-        # Intentar conectar robots si están cerca
+        # Conectar si están cerca
         for i in range(1, len(robots_list)):
             curr_robot = robots_list[i]
             prev_robot = robots_list[i - 1]
-
             if distance(curr_robot, prev_robot) < connection_distance:
                 connect_robots(curr_robot, prev_robot)
 
-            # Si aún no está conectado, moverse hacia el anterior
-            elif prev_robot not in curr_robot.connected_to:
-                move_towards(curr_robot, prev_robot, speed=1)
+        # 👉 Movimiento hacia el anterior solo después de 100 frames
+        if frame_counter > 100:
+            for i in range(1, len(robots_list)):
+                curr_robot = robots_list[i]
+                prev_robot = robots_list[i - 1]
+                if prev_robot not in curr_robot.connected_to:
+                    move_towards(curr_robot, prev_robot, speed=1)
 
         propagate_source_connection(robots_list[0])
 
