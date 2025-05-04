@@ -36,13 +36,5 @@ class Robot:
             self.x += self.speed * dx / dist
             self.y += self.speed * dy / dist
 
-    def draw(self, screen):
-        if self.connected_to_source and self.connected_to_demand:
-            color = (0, 200, 0)  # Green
-        else:
-            color = (100, 100, 255)  # Blue
+    def draw(self, screen, color=(0, 0, 255)):
         pygame.draw.circle(screen, color, (int(self.x), int(self.y)), self.radius)
-        font = pygame.font.SysFont(None, 20)
-        text = font.render(str(self.robot_id), True, (0, 0, 0))
-        text_rect = text.get_rect(center=(int(self.x), int(self.y)))
-        screen.blit(text, text_rect)
