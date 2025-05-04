@@ -1,7 +1,7 @@
 import pygame
 import math
 import random
-from class_logic import Logic
+
 
 class Source:
     def __init__(self, source_id, x, y, radius):
@@ -9,12 +9,16 @@ class Source:
         self.x = x
         self.y = y
         self.radius = radius
-        self.color = (255, 165, 0)  # Orange
-        self.connected_to = []  # Can act like a robot
-        self.connected = True  # Source is always connected
+        self.color = (0, 0, 0)  # Black
+        self.connected_to = []
+        self.connected = True  # Source always connected
 
     def draw(self, screen):
         pygame.draw.circle(screen, self.color, (int(self.x), int(self.y)), self.radius)
+        font = pygame.font.SysFont(None, 22)
+        text = font.render("S", True, (255, 255, 255))
+        text_rect = text.get_rect(center=(int(self.x), int(self.y)))
+        screen.blit(text, text_rect)
 
 class Demand:
     def __init__(self, demand_id, x, y, radius):
@@ -22,9 +26,16 @@ class Demand:
         self.x = x
         self.y = y
         self.radius = radius
-        self.color = (0, 128, 255)  # Blue
-        self.connected_to = []  # Can receive connections
+        self.color = (0, 0, 0)  # Black
+        self.connected_to = []
         self.connected = False
 
     def draw(self, screen):
         pygame.draw.circle(screen, self.color, (int(self.x), int(self.y)), self.radius)
+        font = pygame.font.SysFont(None, 22)
+        text = font.render("D", True, (255, 255, 255))
+        text_rect = text.get_rect(center=(int(self.x), int(self.y)))
+        screen.blit(text, text_rect)
+
+
+
