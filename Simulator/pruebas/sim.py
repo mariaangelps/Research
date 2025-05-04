@@ -7,23 +7,24 @@ from class_source_and_demand import Source, Demand
 def distance(a, b):
     return math.hypot(a.x - b.x, a.y - b.y)
 
-def propagate_connection_from_source(robot, visited):
-    if robot in visited:
-        return
-    visited.add(robot)
-    robot.connected_to_source = True
-    for neighbor in robot.connected_to:
-        if isinstance(neighbor, Robot):
-            propagate_connection_from_source(neighbor, visited)
+def connect_robots(robot_a, robot_b):
+    if robot_b not in robot_a.connected_to:
+        robot_a.connected_to.append(robot_b)
+        print(f"Robot {robot_a.robot_id} connected to Robot {robot_b.robot_id}")
 
-def propagate_connection_from_demand(robot, visited):
-    if robot in visited:
-        return
-    visited.add(robot)
-    robot.connected_to_demand = True
-    for neighbor in robot.connected_to:
-        if isinstance(neighbor, Robot):
-            propagate_connection_from_demand(neighbor, visited)
+    if robot_a not in robot_b.connected_to:
+        robot_b.connected_to.append(robot_a)
+        print(f"Robot {robot_b.robot_id} connected to Robot {robot_a.robot_id}")
+
+    robot_a.moving = False
+    robot_b.moving = False
+
+def propagate_source_connection(robot):
+    if not robot.connected_to_source:
+        robot.connected_to_source = True
+        for neighbor in robot.connected_to:
+            if isinstance(neighbor, Robot):
+                propagate_source_connection(neighbor)
 
 def main():
     pygame.init()
@@ -66,6 +67,7 @@ def main():
                 robots_list[0].connected_to.append(source)
                 robots_list[0].moving = False
                 print("Robot 0 connected to Source")
+                propagate_source_connection(robots_list[0])
 
         # Connect robot 4 to demand if close enough
         if distance(robots_list[4], demand) < connection_distance:
@@ -74,31 +76,18 @@ def main():
                 robots_list[4].moving = False
                 print("Robot 4 connected to Demand")
 
-        # Clear old connectivity status
-        for robot in robots_list:
-            robot.connected_to_source = False
-            robot.connected_to_demand = False
-
-        # Propagate source/demand connectivity
-        propagate_connection_from_source(robots_list[0], set())
-        propagate_connection_from_demand(robots_list[4], set())
-
-        # Try to connect each robot to its neighbors
+        # Try to connect robots to their neighbors if close enough
         for i in range(1, len(robots_list)):
             curr_robot = robots_list[i]
             prev_robot = robots_list[i - 1]
 
             if distance(curr_robot, prev_robot) < connection_distance:
-                if prev_robot not in curr_robot.connected_to:
-                    curr_robot.connected_to.append(prev_robot)
-                    prev_robot.connected_to.append(curr_robot)
-                    print(f"Robot {curr_robot.robot_id} connected to Robot {prev_robot.robot_id}")
+                connect_robots(curr_robot, prev_robot)
 
-                # If previous is already connected to source or demand, stop moving
-                if prev_robot.connected_to_source or prev_robot.connected_to_demand:
-                    curr_robot.moving = False
+        # After connecting, re-check propagation in case new connections formed
+        propagate_source_connection(robots_list[0])
 
-        # Draw connection lines only if robots are close and connected
+        # Draw connection lines
         for robot in robots_list:
             for neighbor in robot.connected_to:
                 if isinstance(neighbor, Robot) and distance(robot, neighbor) < connection_distance:
@@ -111,7 +100,6 @@ def main():
             color = (0, 255, 0) if robot.connected_to_source else (0, 0, 255)
             robot.draw(screen, color=color)
 
-            # Draw the robot's ID number near the robot
             font = pygame.font.Font(None, 36)
             text = font.render(str(robot.robot_id), True, (0, 0, 0))
             screen.blit(text, (robot.x - robot_radius / 2, robot.y - robot_radius / 2))
