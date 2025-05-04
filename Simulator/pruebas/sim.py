@@ -3,7 +3,7 @@ import random
 import math
 from class_robot import Robot
 from class_source_and_demand import Source, Demand
-
+#SOLO FALTARIA QUE SE ALINEEEN I GUESS
 def distance(a, b):
     return math.hypot(a.x - b.x, a.y - b.y)
 
@@ -126,7 +126,7 @@ def main():
         for robot in robots_list:
             for neighbor in robot.connected_to:
                 if isinstance(neighbor, Robot):
-                    pygame.draw.line(screen, (0, 200, 0), (robot.x, robot.y), (neighbor.x, neighbor.y), 2)
+                    pygame.draw.line(screen, (0, 0, 0), (robot.x, robot.y), (neighbor.x, neighbor.y), 2)
                 elif isinstance(neighbor, (Source, Demand)):
                     pygame.draw.line(screen, (0, 0, 0), (robot.x, robot.y), (neighbor.x, neighbor.y), 2)
 
@@ -137,6 +137,27 @@ def main():
             font = pygame.font.Font(None, 36)
             text = font.render(str(robot.robot_id), True, (0, 0, 0))
             screen.blit(text, (robot.x - robot_radius / 2, robot.y - robot_radius / 2))
+
+
+                # Verificar si todos están conectados al Source
+        # Verificar si todos están conectados al Source
+        all_connected = all(robot.connected_to_source for robot in robots_list)
+
+        if all_connected:
+            target_y = source.y
+            spacing = 100  # Puedes ajustar este valor para separación horizontal
+            start_x = source.x + 50  # Punto de inicio desde la fuente hacia la derecha
+
+            for i, robot in enumerate(sorted(robots_list, key=lambda r: r.robot_id)):
+                target_x = start_x + i * spacing
+                dx = target_x - robot.x
+                dy = target_y - robot.y
+
+                if abs(dx) > 1:
+                    robot.x += dx * 0.05  # Movimiento suave en X
+                if abs(dy) > 1:
+                    robot.y += dy * 0.05  # Movimiento suave en Y
+
 
         pygame.display.flip()
         frame_counter += 1
