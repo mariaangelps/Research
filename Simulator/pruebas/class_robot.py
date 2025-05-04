@@ -17,8 +17,8 @@ class Robot:
         self.connected_to_demand = False
 
     def set_new_destination(self):
-        dx = random.randint(-60, 60)
-        dy = random.randint(-30, 30)
+        dx = random.randint(-20, 20)
+        dy = random.randint(-10, 10)
         self.destination = (self.x + dx, self.y + dy)
 
     def update(self):
