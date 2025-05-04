@@ -48,8 +48,6 @@ def main():
     source = Source("Source", 100, 250, 25)
     demand = Demand("Demand", 900, 250, 25)
 
-    # Posiciones dispersas
-    # Generar posiciones aleatorias dentro del área (arena)
     positions = []
     while len(positions) < n_robots:
         x = random.randint(100, 900)
@@ -61,7 +59,11 @@ def main():
     for i in range(n_robots):
         x, y = positions[i]
         robot = Robot(i, x, y, robot_radius)
-        robot.set_new_destination()
+        if i == 0:
+            # Robot 0 irá directamente al Source
+            robot.moving = True
+        else:
+            robot.set_new_destination()
         robots_list.append(robot)
 
     frame_counter = 0
@@ -78,29 +80,36 @@ def main():
 
         for robot in robots_list:
             if robot.moving:
-                robot.update()
+                if robot.robot_id == 0 and source not in robot.connected_to:
+                    move_towards(robot, source, speed=1)
+                else:
+                    robot.update()
 
-        if distance(robots_list[0], source) < connection_distance:
-            if source not in robots_list[0].connected_to:
-                robots_list[0].connected_to.append(source)
-                robots_list[0].moving = False
+        # Robot 0 se conecta al Source si está cerca
+        robot_0 = robots_list[0]
+        if distance(robot_0, source) < connection_distance:
+            if source not in robot_0.connected_to:
+                robot_0.connected_to.append(source)
+                robot_0.moving = False
                 print("Robot 0 connected to Source")
-                propagate_source_connection(robots_list[0])
+                propagate_source_connection(robot_0)
 
+        # Conectar robot 4 con demanda tras un tiempo
         if frame_counter > 150:
-            if demand not in robots_list[4].connected_to:
-                robots_list[4].connected_to.append(demand)
-                robots_list[4].moving = False
+            robot_4 = robots_list[4]
+            if demand not in robot_4.connected_to:
+                robot_4.connected_to.append(demand)
+                robot_4.moving = False
                 print("Robot 4 connected to Demand")
 
-        # Conectar si están cerca
+        # Conectar robots si están cerca
         for i in range(1, len(robots_list)):
             curr_robot = robots_list[i]
             prev_robot = robots_list[i - 1]
             if distance(curr_robot, prev_robot) < connection_distance:
                 connect_robots(curr_robot, prev_robot)
 
-        # 👉 Movimiento hacia el anterior solo después de 100 frames
+        # Movimiento hacia el anterior
         if frame_counter > 100:
             for i in range(1, len(robots_list)):
                 curr_robot = robots_list[i]
@@ -108,7 +117,10 @@ def main():
                 if prev_robot not in curr_robot.connected_to:
                     move_towards(curr_robot, prev_robot, speed=1)
 
-        propagate_source_connection(robots_list[0])
+        # Propagar conexión desde cualquier robot que tenga conexión con el Source
+        for robot in robots_list:
+            if source in robot.connected_to or any(isinstance(n, Robot) and n.connected_to_source for n in robot.connected_to):
+                propagate_source_connection(robot)
 
         # Dibujar conexiones
         for robot in robots_list:
@@ -120,11 +132,7 @@ def main():
 
         # Dibujar robots
         for robot in robots_list:
-            if robot.robot_id == 0:
-                color = (0, 255, 0) if source in robot.connected_to else (0, 0, 255)
-            else:
-                color = (0, 255, 0) if robot.connected_to_source else (0, 0, 255)
-
+            color = (0, 255, 0) if robot.connected_to_source else (0, 0, 255)
             robot.draw(screen, color=color)
             font = pygame.font.Font(None, 36)
             text = font.render(str(robot.robot_id), True, (0, 0, 0))
