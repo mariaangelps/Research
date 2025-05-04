@@ -2,40 +2,31 @@ import pygame
 import math
 import random
 
-
 class Source:
-    def __init__(self, source_id, x, y, radius):
-        self.source_id = source_id
+    def __init__(self, label, x, y, radius):
+        self.label = label
         self.x = x
         self.y = y
         self.radius = radius
-        self.color = (0, 0, 0)  # Black
-        self.connected_to = []
-        self.connected = True  # Source always connected
 
     def draw(self, screen):
-        pygame.draw.circle(screen, self.color, (int(self.x), int(self.y)), self.radius)
-        font = pygame.font.SysFont(None, 22)
+        pygame.draw.circle(screen, (0, 0, 0), (self.x, self.y), self.radius)
+        font = pygame.font.Font(None, 36)
         text = font.render("S", True, (255, 255, 255))
-        text_rect = text.get_rect(center=(int(self.x), int(self.y)))
-        screen.blit(text, text_rect)
+        screen.blit(text, (self.x - self.radius / 2, self.y - self.radius / 2))
+
 
 class Demand:
-    def __init__(self, demand_id, x, y, radius):
-        self.demand_id = demand_id
+    def __init__(self, label, x, y, radius):
+        self.label = label
         self.x = x
         self.y = y
         self.radius = radius
-        self.color = (0, 0, 0)  # Black
-        self.connected_to = []
         self.connected = False
 
     def draw(self, screen):
-        pygame.draw.circle(screen, self.color, (int(self.x), int(self.y)), self.radius)
-        font = pygame.font.SysFont(None, 22)
+        color = (0, 255, 0) if self.connected else (0, 0, 0)
+        pygame.draw.circle(screen, color, (self.x, self.y), self.radius)
+        font = pygame.font.Font(None, 36)
         text = font.render("D", True, (255, 255, 255))
-        text_rect = text.get_rect(center=(int(self.x), int(self.y)))
-        screen.blit(text, text_rect)
-
-
-
+        screen.blit(text, (self.x - self.radius / 2, self.y - self.radius / 2))
