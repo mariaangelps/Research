@@ -3,7 +3,7 @@ import random
 import math
 from class_robot import Robot
 from class_source_and_demand import Source, Demand
-#SOLO FALTARIA QUE SE ALINEEEN I GUESS
+
 def distance(a, b):
     return math.hypot(a.x - b.x, a.y - b.y)
 
@@ -17,6 +17,7 @@ def connect_robots(robot_a, robot_b):
         new_connection = True
     if new_connection:
         print(f"Robots {robot_a.robot_id} and {robot_b.robot_id} are now connected")
+        
     robot_a.moving = False
     robot_b.moving = False
 
@@ -48,6 +49,7 @@ def main():
     source = Source("Source", 100, 250, 25)
     demand = Demand("Demand", 900, 250, 25)
 
+    # Generar posiciones aleatorias separadas
     positions = []
     while len(positions) < n_robots:
         x = random.randint(100, 900)
@@ -56,14 +58,12 @@ def main():
         if not too_close:
             positions.append((x, y))
 
+    # Crear robots
     for i in range(n_robots):
         x, y = positions[i]
         robot = Robot(i, x, y, robot_radius)
-        if i == 0:
-            # Robot 0 irá directamente al Source
-            robot.moving = True
-        else:
-            robot.set_new_destination()
+        if i != 0:
+            robot.set_new_destination()  # Solo los demás se mueven aleatoriamente
         robots_list.append(robot)
 
     frame_counter = 0
@@ -78,23 +78,22 @@ def main():
             if event.type == pygame.QUIT:
                 running = False
 
+        # Movimiento de robots
         for robot in robots_list:
-            if robot.moving:
-                if robot.robot_id == 0 and source not in robot.connected_to:
-                    move_towards(robot, source, speed=1)
-                else:
-                    robot.update()
+            if robot.robot_id == 0 and source not in robot.connected_to:
+                move_towards(robot, source, speed=1)
+            elif robot.moving:
+                robot.update()
 
-        # Robot 0 se conecta al Source si está cerca
+        # Conexión del robot 0 al Source
         robot_0 = robots_list[0]
-        if distance(robot_0, source) < connection_distance:
-            if source not in robot_0.connected_to:
-                robot_0.connected_to.append(source)
-                robot_0.moving = False
-                print("Robot 0 connected to Source")
-                propagate_source_connection(robot_0)
+        if distance(robot_0, source) < connection_distance and source not in robot_0.connected_to:
+            robot_0.connected_to.append(source)
+            robot_0.moving = False
+            print("Robot 0 connected to Source")
+            propagate_source_connection(robot_0)
 
-        # Conectar robot 4 con demanda tras un tiempo
+        # Conexión de robot 4 al Demand después de un tiempo
         if frame_counter > 150:
             robot_4 = robots_list[4]
             if demand not in robot_4.connected_to:
@@ -109,7 +108,7 @@ def main():
             if distance(curr_robot, prev_robot) < connection_distance:
                 connect_robots(curr_robot, prev_robot)
 
-        # Movimiento hacia el anterior
+        # Movimiento hacia el anterior después de cierto tiempo
         if frame_counter > 100:
             for i in range(1, len(robots_list)):
                 curr_robot = robots_list[i]
@@ -117,18 +116,15 @@ def main():
                 if prev_robot not in curr_robot.connected_to:
                     move_towards(curr_robot, prev_robot, speed=1)
 
-        # Propagar conexión desde cualquier robot que tenga conexión con el Source
+        # Propagación de la conexión desde el Source
         for robot in robots_list:
             if source in robot.connected_to or any(isinstance(n, Robot) and n.connected_to_source for n in robot.connected_to):
                 propagate_source_connection(robot)
 
-        # Dibujar conexiones
+        # Dibujar conexiones en negro
         for robot in robots_list:
             for neighbor in robot.connected_to:
-                if isinstance(neighbor, Robot):
-                    pygame.draw.line(screen, (0, 0, 0), (robot.x, robot.y), (neighbor.x, neighbor.y), 2)
-                elif isinstance(neighbor, (Source, Demand)):
-                    pygame.draw.line(screen, (0, 0, 0), (robot.x, robot.y), (neighbor.x, neighbor.y), 2)
+                pygame.draw.line(screen, (0, 0, 0), (robot.x, robot.y), (neighbor.x, neighbor.y), 2)
 
         # Dibujar robots
         for robot in robots_list:
@@ -138,25 +134,33 @@ def main():
             text = font.render(str(robot.robot_id), True, (0, 0, 0))
             screen.blit(text, (robot.x - robot_radius / 2, robot.y - robot_radius / 2))
 
-
-                # Verificar si todos están conectados al Source
-        # Verificar si todos están conectados al Source
+        # Alinear todos cuando estén conectados al Source
         all_connected = all(robot.connected_to_source for robot in robots_list)
-
         if all_connected:
             target_y = source.y
-            spacing = 100  # Puedes ajustar este valor para separación horizontal
-            start_x = source.x + 50  # Punto de inicio desde la fuente hacia la derecha
-
+            spacing = 100
+            start_x = source.x + 50
             for i, robot in enumerate(sorted(robots_list, key=lambda r: r.robot_id)):
                 target_x = start_x + i * spacing
                 dx = target_x - robot.x
                 dy = target_y - robot.y
-
                 if abs(dx) > 1:
-                    robot.x += dx * 0.05  # Movimiento suave en X
+                    robot.x += dx * 0.05
                 if abs(dy) > 1:
-                    robot.y += dy * 0.05  # Movimiento suave en Y
+                    robot.y += dy * 0.05
+
+                    # Verificar si ya están alineados (suficientemente cerca del objetivo)
+            aligned = True
+            for i, robot in enumerate(sorted(robots_list, key=lambda r: r.robot_id)):
+                target_x = start_x + i * spacing
+                if abs(robot.x - target_x) > 5 or abs(robot.y - target_y) > 5:
+                    aligned = False
+                    break
+
+            if aligned:
+                print("All robots are alligned, end of simulation")
+                pygame.time.wait(2000)  # Espera 2 segundos para que se vea
+                running = False
 
 
         pygame.display.flip()
