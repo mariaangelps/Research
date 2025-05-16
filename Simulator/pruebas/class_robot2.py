@@ -2,7 +2,7 @@ import pygame
 import math
 import random
 import time
-from class_logic import Logic
+from Simulator.pruebas.class_logic import Logic
 
 class Robot:
     def __init__(self, robot_id, x, y, radius):
