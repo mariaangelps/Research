@@ -3,8 +3,8 @@ import math
 class Logic:
     def __init__(self, angle):
         self.angle = angle
-        self.drive_speed = 5
-        self.color = [0, 150, 0]  #green while moving
+        self.drive_speed = 3
+        self.color = [0, 150, 0]  
 
     def get_drive_speed(self):
         return self.drive_speed
