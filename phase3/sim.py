@@ -1,7 +1,7 @@
 import pygame
 import random
 import math
-from class_robot import Robot  # Asegúrate de que Robot tenga set_destination() y update()
+from class_robot import Robot  # Asegúrate de que Robot tenga set_destination(), update(), y .connected_to_source
 
 # Parámetros
 ARENA_WIDTH, ARENA_HEIGHT = 900, 400
@@ -35,12 +35,14 @@ def propagate_hop_count(source_node, robots, connections):
 
     for robot in robots:
         robot.hop_count = None
+        robot.connected_to_source = False  # Reset
 
     while queue:
         current, hops = queue.pop(0)
 
         if isinstance(current, Robot):
             current.hop_count = hops
+            current.connected_to_source = True
 
         visited.add(current)
 
@@ -55,7 +57,7 @@ def propagate_hop_count(source_node, robots, connections):
                 queue.append((neighbor, hops + 1))
 
 def all_connected_to_source(robots):
-    return all(robot.hop_count is not None for robot in robots)
+    return all(robot.connected_to_source for robot in robots)
 
 def main():
     print("Sim Begin")
@@ -93,6 +95,7 @@ def main():
     connections = []
     clock = pygame.time.Clock()
     simulation_complete = False
+    source_already_connected = False
     demand_already_connected = False
     running = True
 
@@ -115,10 +118,14 @@ def main():
                 if distance(robots_list[i], robots_list[j]) < CONNECTION_DISTANCE:
                     connect(robots_list[i], robots_list[j], connections)
 
-        # Conexión a source
-        for robot in robots_list:
-            if distance(robot, source) < CONNECTION_DISTANCE:
-                connect(robot, source, connections)
+        # Solo un robot puede conectar con source
+        if not source_already_connected:
+            for robot in robots_list:
+                if distance(robot, source) < CONNECTION_DISTANCE:
+                    connect(robot, source, connections)
+                    source_already_connected = True
+                    print(f"🔌 Robot {robot.robot_id} fue el PRIMERO en conectarse al Source.")
+                    break  # solo el primero
 
         # Solo un robot puede conectar con demand
         if not demand_already_connected:
@@ -129,13 +136,13 @@ def main():
                     print(f"🔌 Robot {robot.robot_id} fue el PRIMERO en conectarse al Demand.")
                     break  # solo el primero
 
-        # Propagar hop count
+        # Propagar hop count + conexión visual desde el source
         propagate_hop_count(source, robots_list, connections)
 
         # Verificar si demand está conectado a un robot con hop_count
         demand_connected = any(
-            (a == demand and isinstance(b, Robot) and b.hop_count is not None) or
-            (b == demand and isinstance(a, Robot) and a.hop_count is not None)
+            (a == demand and isinstance(b, Robot) and b.connected_to_source) or
+            (b == demand and isinstance(a, Robot) and a.connected_to_source)
             for a, b in connections
         )
 
@@ -144,26 +151,24 @@ def main():
             for robot in robots_list:
                 robot.moving = False
             simulation_complete = True
-            print("\n✅ Todos los robots están conectados. Deteniendo movimiento.")
+            print("\n✅ Todos los robots están conectados al source y el demand fue alcanzado. Movimiento detenido.")
             print("\n--- HOP COUNTS ---")
             for robot in robots_list:
-                print(f"Robot {robot.robot_id} | Final destination: {robot.destination} | Hop Count: {robot.hop_count}")
+                print(f"Robot {robot.robot_id} | Hop Count: {robot.hop_count}")
             print("------------------\n")
 
         # Dibujar conexiones
         for a, b in connections:
             pygame.draw.line(screen, (0, 0, 0), (a.x, a.y), (b.x, b.y), 2)
 
-        # Dibujar robots (colores según hop count)
+        # Dibujar robots
         for robot in robots_list:
-            if robot.hop_count is not None:
-                green = min(255, 50 + robot.hop_count * 30)
-                color = (0, green, 255)
+            if robot.connected_to_source:
+                color = (0, 200, 0)  # Verde si está conectado al source
             else:
-                color = (0, 0, 255)
+                color = (0, 0, 255)  # Azul si aún no lo está
             robot.draw(screen, color=color)
 
-        # Mensaje final en pantalla
         if simulation_complete:
             font_big = pygame.font.Font(None, 48)
             msg = font_big.render("✅ Conexión completa", True, (0, 128, 0))
