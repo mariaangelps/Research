@@ -1,15 +1,14 @@
 import pygame
 import random
 import math
-from class_robot import Robot  # Asegúrate que Robot tenga .set_destination() y .update()
+from class_robot import Robot  # Asegúrate de que Robot tenga set_destination() y update()
 
-# Parámetros globales
+# Parámetros
 ARENA_WIDTH, ARENA_HEIGHT = 900, 400
 ROBOT_RADIUS = 10
 N_ROBOTS = 5
 CONNECTION_DISTANCE = 80
 
-# Nodos fijos
 class Node:
     def __init__(self, name, x, y, color):
         self.name = name
@@ -23,7 +22,6 @@ class Node:
         label = font.render(self.name, True, (0, 0, 0))
         screen.blit(label, (self.x + 10, self.y - 10))
 
-# Utilidades
 def distance(a, b):
     return math.hypot(a.x - b.x, a.y - b.y)
 
@@ -56,6 +54,9 @@ def propagate_hop_count(source_node, robots, connections):
             if neighbor and neighbor not in visited:
                 queue.append((neighbor, hops + 1))
 
+def all_connected_to_source(robots):
+    return all(robot.hop_count is not None for robot in robots)
+
 def main():
     print("Sim Begin")
 
@@ -70,11 +71,9 @@ def main():
         robot = Robot(robot_id, x, y, ROBOT_RADIUS)
         robots_list.append(robot)
 
-    # Nodos fijos
     source = Node("Source", 50, ARENA_HEIGHT // 2, (255, 0, 0))
     demand = Node("Demand", ARENA_WIDTH - 50, ARENA_HEIGHT // 2, (0, 128, 0))
 
-    # Destinos iniciales
     destinations = [
         (100, 100),
         (200, 200),
@@ -93,6 +92,7 @@ def main():
 
     connections = []
     clock = pygame.time.Clock()
+    simulation_complete = False
     running = True
 
     while running:
@@ -120,16 +120,33 @@ def main():
             if distance(robot, demand) < CONNECTION_DISTANCE:
                 connect(robot, demand, connections)
 
-        # Propagación de hop count
+        # Propagar hop count
         propagate_hop_count(source, robots_list, connections)
+
+        # Verifica si demand está conectado a un robot con hop_count
+        demand_connected = any(
+            (a == demand and isinstance(b, Robot) and b.hop_count is not None) or
+            (b == demand and isinstance(a, Robot) and a.hop_count is not None)
+            for a, b in connections
+        )
+
+        # Si todos los robots están conectados y demand también → detener movimiento y mostrar info
+        if all_connected_to_source(robots_list) and demand_connected and not simulation_complete:
+            for robot in robots_list:
+                robot.moving = False
+            simulation_complete = True
+            print("\n✅ Todos los robots están conectados. Deteniendo movimiento.")
+            print("\n--- HOP COUNTS ---")
+            for robot in robots_list:
+                print(f"Robot {robot.robot_id} | Final destination: {robot.destination} | Hop Count: {robot.hop_count}")
+            print("------------------\n")
 
         # Dibujar conexiones
         for a, b in connections:
             pygame.draw.line(screen, (0, 0, 0), (a.x, a.y), (b.x, b.y), 2)
 
-        # Dibujar robots
+        # Dibujar robots (sin texto de hop count)
         for robot in robots_list:
-            # Color según hop count
             if robot.hop_count is not None:
                 green = min(255, 50 + robot.hop_count * 30)
                 color = (0, green, 255)
@@ -137,18 +154,11 @@ def main():
                 color = (0, 0, 255)
             robot.draw(screen, color=color)
 
-            # Mostrar hop count
-            font = pygame.font.Font(None, 20)
-            hc = str(robot.hop_count) if robot.hop_count is not None else "-"
-            text = font.render(hc, True, (0, 0, 0))
-            screen.blit(text, (robot.x - 5, robot.y - 25))
-
-        # Mostrar hop count si demand está conectado
-        for a, b in connections:
-            if a == demand and isinstance(b, Robot) and b.hop_count is not None:
-                font = pygame.font.Font(None, 24)
-                text = font.render(f"Demand hop count: {b.hop_count + 1}", True, (0, 0, 0))
-                screen.blit(text, (ARENA_WIDTH // 2 - 80, 10))
+        # Mensaje visual si completado
+        if simulation_complete:
+            font_big = pygame.font.Font(None, 48)
+            msg = font_big.render("✅ Conexión completa", True, (0, 128, 0))
+            screen.blit(msg, (ARENA_WIDTH // 2 - 160, 20))
 
         pygame.display.flip()
         clock.tick(60)
