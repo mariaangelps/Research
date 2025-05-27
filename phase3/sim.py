@@ -1,7 +1,7 @@
 import pygame
 import random
 import math
-from class_robot import Robot  # Asegúrate de que Robot tenga set_destination(), update(), y .connected_to_source
+from class_robot import Robot  # Asegúrate de que tiene set_destination, update, y connected_to_source
 
 # Parámetros
 ARENA_WIDTH, ARENA_HEIGHT = 900, 400
@@ -35,7 +35,7 @@ def propagate_hop_count(source_node, robots, connections):
 
     for robot in robots:
         robot.hop_count = None
-        robot.connected_to_source = False  # Reset
+        robot.connected_to_source = False
 
     while queue:
         current, hops = queue.pop(0)
@@ -97,6 +97,8 @@ def main():
     simulation_complete = False
     source_already_connected = False
     demand_already_connected = False
+    alignment_in_progress = False
+    alignment_targets = []
     running = True
 
     while running:
@@ -118,44 +120,72 @@ def main():
                 if distance(robots_list[i], robots_list[j]) < CONNECTION_DISTANCE:
                     connect(robots_list[i], robots_list[j], connections)
 
-        # Solo un robot puede conectar con source
+        # Solo un robot se conecta al source
         if not source_already_connected:
             for robot in robots_list:
                 if distance(robot, source) < CONNECTION_DISTANCE:
                     connect(robot, source, connections)
                     source_already_connected = True
                     print(f"🔌 Robot {robot.robot_id} fue el PRIMERO en conectarse al Source.")
-                    break  # solo el primero
+                    break
 
-        # Solo un robot puede conectar con demand
+        # Solo un robot se conecta al demand
         if not demand_already_connected:
             for robot in robots_list:
                 if distance(robot, demand) < CONNECTION_DISTANCE:
                     connect(robot, demand, connections)
                     demand_already_connected = True
                     print(f"🔌 Robot {robot.robot_id} fue el PRIMERO en conectarse al Demand.")
-                    break  # solo el primero
+                    break
 
-        # Propagar hop count + conexión visual desde el source
+        # Propagar hop count y conexión visual
         propagate_hop_count(source, robots_list, connections)
 
-        # Verificar si demand está conectado a un robot con hop_count
+        # Verificar si demand está conectado a un robot conectado al source
         demand_connected = any(
             (a == demand and isinstance(b, Robot) and b.connected_to_source) or
             (b == demand and isinstance(a, Robot) and a.connected_to_source)
             for a, b in connections
         )
 
-        # Detener cuando todo esté conectado
+        # Cuando todo esté conectado → detener y alinear
         if all_connected_to_source(robots_list) and demand_connected and not simulation_complete:
+            simulation_complete = True
             for robot in robots_list:
                 robot.moving = False
-            simulation_complete = True
-            print("\n✅ Todos los robots están conectados al source y el demand fue alcanzado. Movimiento detenido.")
-            print("\n--- HOP COUNTS ---")
+
+            print("\n✅ Red completa. Movimiento detenido.")
+            print("--- HOP COUNTS ---")
             for robot in robots_list:
                 print(f"Robot {robot.robot_id} | Hop Count: {robot.hop_count}")
             print("------------------\n")
+
+            # PASARELA: alineación elegante
+            alignment_in_progress = True
+            alignment_targets = []
+            spacing = (demand.x - source.x) / (len(robots_list) + 1)
+            y_line = source.y
+
+            for i, robot in enumerate(sorted(robots_list, key=lambda r: r.robot_id)):
+                target_x = source.x + (i + 1) * spacing
+                alignment_targets.append((robot, target_x, y_line))
+
+        # Alinear robots
+        if alignment_in_progress:
+            all_aligned = True
+            for robot, target_x, target_y in alignment_targets:
+                dx = target_x - robot.x
+                dy = target_y - robot.y
+                if abs(dx) > 1:
+                    robot.x += dx * 0.05
+                    all_aligned = False
+                if abs(dy) > 1:
+                    robot.y += dy * 0.05
+                    all_aligned = False
+
+            if all_aligned:
+                print("✨ Robots alineados como reinas.")
+                alignment_in_progress = False
 
         # Dibujar conexiones
         for a, b in connections:
@@ -163,10 +193,7 @@ def main():
 
         # Dibujar robots
         for robot in robots_list:
-            if robot.connected_to_source:
-                color = (0, 200, 0)  # Verde si está conectado al source
-            else:
-                color = (0, 0, 255)  # Azul si aún no lo está
+            color = (0, 200, 0) if robot.connected_to_source else (0, 0, 255)
             robot.draw(screen, color=color)
 
         if simulation_complete:
