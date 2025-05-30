@@ -160,6 +160,14 @@ def main():
                 print(f"Robot {robot.robot_id} | Hop Count: {robot.hop_count}")
             print("-------------------")
 
+            print("--- Final Connections ---")
+            for a, b in connections:
+                name_a = a.robot_id if hasattr(a, 'robot_id') else a.name
+                name_b = b.robot_id if hasattr(b, 'robot_id') else b.name
+                print(f"{name_a} <--> {name_b}")
+            print("-------------------------")
+
+
             # Begin alignment of robots in a straight line between source and demand
             alignment_in_progress = True
             alignment_targets = []
@@ -190,7 +198,7 @@ def main():
         # Draw connection lines
         for a, b in connections:
             pygame.draw.line(screen, (0, 0, 0), (a.x, a.y), (b.x, b.y), 2)
-
+            
         # Draw robots, green if connected to source, blue otherwise
         for robot in robots_list:
             color = (0, 200, 0) if robot.connected_to_source else (0, 0, 255)
