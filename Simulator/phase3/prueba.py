@@ -80,8 +80,10 @@ def validate_hop_counts(robots, connections):
                         has_valid_neighbor = True
             if not has_valid_neighbor:
                 print(f"[!] Robot {robot.robot_id} has no valid upstream connection (hop continuity error).")
+
+
 def print_connection_tree(source, robots, connections):
-    # Construye un grafo desde las conexiones
+    # Construimos el grafo
     graph = {}
     for a, b in connections:
         graph.setdefault(a, []).append(b)
@@ -92,19 +94,33 @@ def print_connection_tree(source, robots, connections):
 
     visited = set()
 
-    def dfs(node, level):
+    def hop_tree_dfs(node, level):
         indent = "    " * level
         print(f"{indent}{get_name(node)}")
         visited.add(node)
 
-        neighbors = sorted(graph.get(node, []), key=lambda n: get_name(n))
-        for neighbor in neighbors:
-            if neighbor not in visited:
-                dfs(neighbor, level + 1)
+        # Filtramos vecinos con hop_count + 1 o demand si es terminal
+        neighbors = []
+        for neighbor in graph.get(node, []):
+            if neighbor in visited:
+                continue
+            if isinstance(node, Node) and node.name == "Source":
+                if isinstance(neighbor, Robot) and neighbor.hop_count == 1:
+                    neighbors.append(neighbor)
+            elif isinstance(node, Robot):
+                if isinstance(neighbor, Robot) and neighbor.hop_count == node.hop_count + 1:
+                    neighbors.append(neighbor)
+                elif isinstance(neighbor, Node) and neighbor.name == "Demand":
+                    neighbors.append(neighbor)
 
-    print("\n--- Connection Tree (based on hop structure) ---")
-    dfs(source, 0)
-    print("------------------------------------------------\n")
+        # Ordenamos los vecinos por nombre
+        neighbors = sorted(neighbors, key=get_name)
+        for neighbor in neighbors:
+            hop_tree_dfs(neighbor, level + 1)
+
+    print("\n--- Connection Tree (based on hop count structure) ---")
+    hop_tree_dfs(source, 0)
+    print("------------------------------------------------------\n")
 
 
 
@@ -224,7 +240,7 @@ def main():
             # Validate hop count logic
             validate_hop_counts(robots_list, connections)
 
-            
+            """
 
             # Align robots
             alignment_in_progress = True
@@ -250,7 +266,7 @@ def main():
             if all_aligned:
                 print("Robots successfully aligned.")
                 alignment_in_progress = False
-
+        """
         # Draw connections
         for a, b in connections:
             pygame.draw.line(screen, (0, 0, 0), (a.x, a.y), (b.x, b.y), 2)
