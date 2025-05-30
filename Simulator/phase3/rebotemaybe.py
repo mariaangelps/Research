@@ -165,13 +165,8 @@ def main():
                 dist = math.hypot(dx, dy)
                 if dist < 20:
                     angle = math.atan2(dy, dx)
-                    robot.x += math.cos(angle) * 6  # Bounce harder
-                    robot.y += math.sin(angle) * 6
-                    if hasattr(robot, 'dest_x') and hasattr(robot, 'dest_y'):
-                        dx_bounce = robot.dest_x - robot.x
-                        dy_bounce = robot.dest_y - robot.y
-                        robot.dest_x = robot.x - dx_bounce
-                        robot.dest_y = robot.y - dy_bounce
+                    robot.x += math.cos(angle) * 12  # Bounce stronger
+                    robot.y += math.sin(angle) * 12
             robot.update()
 
         for i in range(len(robots_list)):
