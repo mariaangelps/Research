@@ -40,10 +40,6 @@ def is_blocked(a, b, obstacles):
                 return True
     return False
 
-def connect(a, b, connections):
-    if (a, b) not in connections and (b, a) not in connections:
-        connections.append((a, b))
-
 def propagate_hop_count(source_node, robots, connections):
     visited = set()
     queue = [(source_node, 0)]
@@ -86,25 +82,31 @@ def print_connection_tree(source, robots, connections):
 
     visited = set()
 
-    def dfs(node, level):
+    def hop_tree_dfs(node, level):
         indent = "    " * level
         print(f"{indent}{get_name(node)}")
         visited.add(node)
 
-        neighbors = sorted((n for n in graph.get(node, []) if isinstance(n, Robot) and n.connected_to_source), key=lambda n: n.hop_count)
-        for neighbor in neighbors:
-            if neighbor not in visited:
-                dfs(neighbor, level + 1)
+        neighbors = []
+        for neighbor in graph.get(node, []):
+            if neighbor in visited:
+                continue
+            if isinstance(node, Node) and node.name == "Source":
+                if isinstance(neighbor, Robot) and neighbor.hop_count == 1:
+                    neighbors.append(neighbor)
+            elif isinstance(node, Robot):
+                if isinstance(neighbor, Robot) and neighbor.hop_count == node.hop_count + 1:
+                    neighbors.append(neighbor)
+                elif isinstance(neighbor, Node) and neighbor.name == "Demand":
+                    neighbors.append(neighbor)
 
-    print("\n--- Connection Tree (based on hop structure) ---")
-    dfs(source, 0)
-    print("Demand")
-    for a, b in connections:
-        if (isinstance(a, Robot) and isinstance(b, Node) and getattr(b, 'name', '') == "Demand"):
-            print("    └── Robot {}".format(a.robot_id))
-        elif (isinstance(b, Robot) and isinstance(a, Node) and getattr(a, 'name', '') == "Demand"):
-            print("    └── Robot {}".format(b.robot_id))
-    print("------------------------------------------------\n")
+        neighbors = sorted(neighbors, key=get_name)
+        for neighbor in neighbors:
+            hop_tree_dfs(neighbor, level + 1)
+
+    print("\n--- Connection Tree (based on hop count structure) ---")
+    hop_tree_dfs(source, 0)
+    print("------------------------------------------------------\n")
 
 def main():
     global walls
@@ -140,12 +142,14 @@ def main():
     connections = []
     clock = pygame.time.Clock()
     simulation_complete = False
+    source_already_connected = False
+    demand_already_connected = False
     running = True
 
     while running:
         screen.fill((255, 255, 255))
         for ox, oy in obstacles:
-            pygame.draw.circle(screen, (255, 0, 0), (ox, oy), 12)
+            pygame.draw.circle(screen, (128, 0, 128), (ox, oy), 12)
 
         source.draw(screen)
         demand.draw(screen)
@@ -171,11 +175,21 @@ def main():
                     if not is_blocked(robots_list[i], robots_list[j], obstacles):
                         try_connect(robots_list[i], robots_list[j], connections, walls)
 
-        for robot in robots_list:
-            if distance(robot, source) < CONNECTION_DISTANCE and not is_blocked(robot, source, obstacles):
-                try_connect(robot, source, connections, walls)
-            if distance(robot, demand) < CONNECTION_DISTANCE and not is_blocked(robot, demand, obstacles):
-                try_connect(robot, demand, connections, walls)
+        # Only one robot can connect to source
+        if not source_already_connected:
+            for robot in robots_list:
+                if distance(robot, source) < CONNECTION_DISTANCE and not is_blocked(robot, source, obstacles):
+                    try_connect(robot, source, connections, walls)
+                    source_already_connected = True
+                    break
+
+        # Only one robot can connect to demand
+        if not demand_already_connected:
+            for robot in robots_list:
+                if distance(robot, demand) < CONNECTION_DISTANCE and not is_blocked(robot, demand, obstacles):
+                    try_connect(robot, demand, connections, walls)
+                    demand_already_connected = True
+                    break
 
         propagate_hop_count(source, robots_list, connections)
 
