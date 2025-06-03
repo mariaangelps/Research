@@ -3,11 +3,10 @@ import random
 import math
 from class_robot import Robot
 
-# Arena and simulation parameters
 ARENA_WIDTH, ARENA_HEIGHT = 900, 400
 ROBOT_RADIUS = 10
-N_ROBOTS = 5
-CONNECTION_DISTANCE = 80
+N_ROBOTS = 15
+CONNECTION_DISTANCE = 120
 
 class Node:
     def __init__(self, name, x, y, color):
@@ -29,255 +28,146 @@ def connect(a, b, connections):
     if (a, b) not in connections and (b, a) not in connections:
         connections.append((a, b))
 
-def propagate_hop_count(source_node, robots, connections):
+def propagate_hop_count(source, robots, connections):
     visited = set()
-    queue = [(source_node, 0)]
+    queue = [(source, 0, None)]
 
     for robot in robots:
         robot.hop_count = None
-        robot.connected_to_source = False
+        robot.parent = None
 
     while queue:
-        current, hops = queue.pop(0)
+        current, hops, parent = queue.pop(0)
 
-        # If it's a robot and hasn't been visited with a shorter path
         if isinstance(current, Robot):
             if current.hop_count is not None:
-                continue  # already visited with shorter path
+                continue
             current.hop_count = hops
-            current.connected_to_source = True
+            current.parent = parent
 
         visited.add(current)
 
         for a, b in connections:
-            neighbor = None
-            if a == current and b not in visited:
-                neighbor = b
-            elif b == current and a not in visited:
-                neighbor = a
-
+            neighbor = b if a == current else a if b == current else None
             if neighbor and neighbor not in visited:
-                queue.append((neighbor, hops + 1))
+                queue.append((neighbor, hops + 1, current))
 
-
-def all_connected_to_source(robots):
-    return all(robot.connected_to_source for robot in robots)
-
-def validate_hop_counts(robots, connections):
+def trace_path_to_sink(robots, sink, connections):
     for robot in robots:
-        if robot.connected_to_source and robot.hop_count is None:
-            print(f"[!] Robot {robot.robot_id} marked connected but has no hop count.")
-        if not robot.connected_to_source and robot.hop_count is not None:
-            print(f"[!] Robot {robot.robot_id} has hop count but is not marked connected.")
-        if robot.hop_count is not None and robot.hop_count > 0:
-            has_valid_neighbor = False
-            for a, b in connections:
-                neighbor = b if a == robot else a if b == robot else None
-                if neighbor:
-                    if isinstance(neighbor, Robot) and neighbor.hop_count == robot.hop_count - 1:
-                        has_valid_neighbor = True
-                    elif isinstance(neighbor, Node) and neighbor.name == "Source":
-                        has_valid_neighbor = True
-            if not has_valid_neighbor:
-                print(f"[!] Robot {robot.robot_id} has no valid upstream connection (hop continuity error).")
+        if any((a == robot and b == sink) or (b == robot and a == sink) for a, b in connections):
+            if robot.hop_count is not None:
+                return robot
+    return None
 
+def get_path(robot):
+    path = []
+    while isinstance(robot, Robot):  # Solo sigue mientras sea un Robot
+        path.append(robot)
+        robot = robot.parent
+    return list(reversed(path))
 
-def print_connection_tree(source, robots, connections):
-    # Construimos el grafo
-    graph = {}
-    for a, b in connections:
-        graph.setdefault(a, []).append(b)
-        graph.setdefault(b, []).append(a)
+    return list(reversed(path))
 
-    def get_name(node):
-        return f"Robot {node.robot_id}" if isinstance(node, Robot) else node.name
-
+def is_path_from_source_to_sink(source, sink, robots, connections):
     visited = set()
+    queue = [source]
 
-    def hop_tree_dfs(node, level):
-        indent = "    " * level
-        print(f"{indent}{get_name(node)}")
-        visited.add(node)
+    while queue:
+        current = queue.pop(0)
+        if current == sink:
+            return True
+        visited.add(current)
 
-        # Filtramos vecinos con hop_count + 1 o demand si es terminal
-        neighbors = []
-        for neighbor in graph.get(node, []):
-            if neighbor in visited:
-                continue
-            if isinstance(node, Node) and node.name == "Source":
-                if isinstance(neighbor, Robot) and neighbor.hop_count == 1:
-                    neighbors.append(neighbor)
-            elif isinstance(node, Robot):
-                if isinstance(neighbor, Robot) and neighbor.hop_count == node.hop_count + 1:
-                    neighbors.append(neighbor)
-                elif isinstance(neighbor, Node) and neighbor.name == "Demand":
-                    neighbors.append(neighbor)
-
-        # Ordenamos los vecinos por nombre
-        neighbors = sorted(neighbors, key=get_name)
-        for neighbor in neighbors:
-            hop_tree_dfs(neighbor, level + 1)
-
-    print("\n--- Connection Tree (based on hop count structure) ---")
-    hop_tree_dfs(source, 0)
-    print("------------------------------------------------------\n")
-
-
-
-
-
+        for a, b in connections:
+            neighbor = b if a == current else a if b == current else None
+            if neighbor and neighbor not in visited:
+                queue.append(neighbor)
+    return False
 
 def main():
-    print("Simulation started")
-
     pygame.init()
     screen = pygame.display.set_mode((ARENA_WIDTH, ARENA_HEIGHT))
-    pygame.display.set_caption("Robot Arena with Hop Count")
-
-    robots_list = []
-    for robot_id in range(N_ROBOTS):
-        x = random.randint(5 * ROBOT_RADIUS, ARENA_WIDTH - 5 * ROBOT_RADIUS)
-        y = random.randint(5 * ROBOT_RADIUS, ARENA_HEIGHT - 5 * ROBOT_RADIUS)
-        robot = Robot(robot_id, x, y, ROBOT_RADIUS)
-        robots_list.append(robot)
+    pygame.display.set_caption("Hop Count with Guaranteed Source ➜ Sink Connection")
 
     source = Node("Source", 50, ARENA_HEIGHT // 2, (255, 0, 0))
-    demand = Node("Demand", ARENA_WIDTH - 50, ARENA_HEIGHT // 2, (0, 128, 0))
+    sink = Node("Sink", ARENA_WIDTH - 50, ARENA_HEIGHT // 2, (0, 128, 0))
 
-    destinations = [
-        (100, 100),
-        (200, 200),
-        (300, 300),
-        (500, 100),
-        (600, 300),
-    ]
+    # Reintenta hasta lograr conexión Source -> Sink
+    connected = False
+    attempts = 0
+    while not connected:
+        attempts += 1
+        robots = []
+        connections = []
 
-    def assign_destinations(robots_list, destinations):
-        for i, robot in enumerate(robots_list):
-            if i < len(destinations):
-                robot.set_destination(*destinations[i])
-                print(f"Robot {robot.robot_id} assigned destination: {destinations[i]}")
+        for i in range(N_ROBOTS):
+            x = random.randint(60, ARENA_WIDTH - 60)
+            y = random.randint(60, ARENA_HEIGHT - 60)
+            robots.append(Robot(i, x, y, ROBOT_RADIUS))
 
-    assign_destinations(robots_list, destinations)
+        for i in range(len(robots)):
+            for j in range(i + 1, len(robots)):
+                if distance(robots[i], robots[j]) <= CONNECTION_DISTANCE:
+                    connect(robots[i], robots[j], connections)
 
-    connections = []
-    clock = pygame.time.Clock()
-    simulation_complete = False
-    source_already_connected = False
-    demand_already_connected = False
-    alignment_in_progress = False
-    alignment_targets = []
+        for robot in robots:
+            if distance(robot, source) <= CONNECTION_DISTANCE:
+                connect(robot, source, connections)
+            if distance(robot, sink) <= CONNECTION_DISTANCE:
+                connect(robot, sink, connections)
+
+        connected = is_path_from_source_to_sink(source, sink, robots, connections)
+
+    print(f"✅ Red generada en intento #{attempts}, hay camino de Source ➜ Sink.")
+
+    # Propagar hops
+    propagate_hop_count(source, robots, connections)
+
+    # Mostrar hop count
+    print("\n--- DEBUGGING MESSAGES ---")
+    for robot in robots:
+        print(f"[Robot {robot.robot_id}] hop_count: {robot.hop_count}")
+    print("--------------------------")
+
+    # Ruta hasta el Sink
+    last_robot = trace_path_to_sink(robots, sink, connections)
+    if last_robot:
+        path = get_path(last_robot)
+        print("\n>>> Optimal Path:")
+        for r in path:
+            print(f"Robot {r.robot_id} (hop: {r.hop_count})")
+    else:
+        print("❌ No se encontró camino al Sink (esto no debería pasar).")
+
+    # Visual loop
     running = True
-
-    
-
     while running:
         screen.fill((255, 255, 255))
         source.draw(screen)
-        demand.draw(screen)
+        sink.draw(screen)
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
 
-        for robot in robots_list:
-            robot.update()
-
-        # Connect nearby robots
-        for i in range(len(robots_list)):
-            for j in range(i + 1, len(robots_list)):
-                if distance(robots_list[i], robots_list[j]) < CONNECTION_DISTANCE:
-                    connect(robots_list[i], robots_list[j], connections)
-
-        # Connect one robot to Source
-        if not source_already_connected:
-            for robot in robots_list:
-                if distance(robot, source) < CONNECTION_DISTANCE:
-                    connect(robot, source, connections)
-                    source_already_connected = True
-                    print(f"Robot {robot.robot_id} connected to Source")
-                    break
-
-        # Connect one robot to Demand
-        if not demand_already_connected:
-            for robot in robots_list:
-                if distance(robot, demand) < CONNECTION_DISTANCE:
-                    connect(robot, demand, connections)
-                    demand_already_connected = True
-                    print(f"Robot {robot.robot_id} connected to Demand")
-                    break
-
-        # Hop count calculation
-        propagate_hop_count(source, robots_list, connections)
-
-        # Check demand connection
-        demand_connected = any(
-            (a == demand and isinstance(b, Robot) and b.connected_to_source) or
-            (b == demand and isinstance(a, Robot) and a.connected_to_source)
-            for a, b in connections
-        )
-
-        if all_connected_to_source(robots_list) and demand_connected and not simulation_complete:
-            simulation_complete = True
-            for robot in robots_list:
-                robot.moving = False
-
-            print("All robots connected. Movement stopped.")
-            print("--- Hop Counts ---")
-            for robot in robots_list:
-                print(f"Robot {robot.robot_id} | Hop Count: {robot.hop_count}")
-            print("-------------------")
-
-            print("--- Final Connections ---")
-            for a, b in connections:
-                name_a = a.robot_id if hasattr(a, 'robot_id') else a.name
-                name_b = b.robot_id if hasattr(b, 'robot_id') else b.name
-                print(f"{name_a} <--> {name_b}")
-            print("-------------------------")
-            print_connection_tree(source, robots_list, connections)
-
-
-            # Validate hop count logic
-            validate_hop_counts(robots_list, connections)
-
-            """
-
-            # Align robots
-            alignment_in_progress = True
-            alignment_targets = []
-            spacing = (demand.x - source.x) / (len(robots_list) + 1)
-            y_line = source.y
-            for i, robot in enumerate(sorted(robots_list, key=lambda r: r.robot_id)):
-                target_x = source.x + (i + 1) * spacing
-                alignment_targets.append((robot, target_x, y_line))
-
-        # Move robots to alignment targets
-        if alignment_in_progress:
-            all_aligned = True
-            for robot, target_x, target_y in alignment_targets:
-                dx = target_x - robot.x
-                dy = target_y - robot.y
-                if abs(dx) > 1:
-                    robot.x += dx * 0.05
-                    all_aligned = False
-                if abs(dy) > 1:
-                    robot.y += dy * 0.05
-                    all_aligned = False
-            if all_aligned:
-                print("Robots successfully aligned.")
-                alignment_in_progress = False
-        """
-        # Draw connections
+        # Conexiones
         for a, b in connections:
-            pygame.draw.line(screen, (0, 0, 0), (a.x, a.y), (b.x, b.y), 2)
+            pygame.draw.line(screen, (180, 180, 180), (a.x, a.y), (b.x, b.y), 1)
 
-        # Draw robots
-        for robot in robots_list:
-            color = (0, 200, 0) if robot.connected_to_source else (0, 0, 255)
+        # Ruta óptima
+        if last_robot:
+            path = get_path(last_robot)
+            for i in range(len(path) - 1):
+                pygame.draw.line(screen, (255, 0, 255),
+                                 (path[i].x, path[i].y),
+                                 (path[i+1].x, path[i+1].y), 3)
+
+        # Robots
+        for robot in robots:
+            color = (255, 0, 255) if last_robot and robot in get_path(last_robot) else (0, 200, 0)
             robot.draw(screen, color=color)
 
         pygame.display.flip()
-        clock.tick(60)
 
     pygame.quit()
 
