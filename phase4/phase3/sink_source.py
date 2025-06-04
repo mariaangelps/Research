@@ -28,9 +28,9 @@ def connect(a, b, connections):
     if (a, b) not in connections and (b, a) not in connections:
         connections.append((a, b))
 
-def propagate_hop_count(source, robots, connections):
+def propagate_hop_count(start_node, robots, connections):
     visited = set()
-    queue = [(source, 0, None)]
+    queue = [(start_node, 0, None)]
 
     for robot in robots:
         robot.hop_count = None
@@ -43,7 +43,8 @@ def propagate_hop_count(source, robots, connections):
             if current.hop_count is not None:
                 continue
             current.hop_count = hops
-            current.parent = parent
+            robot_parent = parent if isinstance(parent, Robot) else None
+            current.parent = robot_parent
 
         visited.add(current)
 
@@ -52,31 +53,28 @@ def propagate_hop_count(source, robots, connections):
             if neighbor and neighbor not in visited:
                 queue.append((neighbor, hops + 1, current))
 
-def trace_path_to_sink(robots, sink, connections):
+def trace_path_to_target(robots, target_node, connections):
     for robot in robots:
-        if any((a == robot and b == sink) or (b == robot and a == sink) for a, b in connections):
+        if any((a == robot and b == target_node) or (b == robot and a == target_node) for a, b in connections):
             if robot.hop_count is not None:
                 return robot
     return None
 
 def get_path(robot):
     path = []
-    while isinstance(robot, Robot):  # Solo sigue mientras sea un Robot
+    while isinstance(robot, Robot):
         path.append(robot)
         robot = robot.parent
     return list(reversed(path))
 
-
-def is_path_from_source_to_sink(source, sink, robots, connections):
+def is_path_exists(source, sink, robots, connections):
     visited = set()
-    queue = [source]
-
+    queue = [sink]
     while queue:
         current = queue.pop(0)
-        if current == sink:
+        if current == source:
             return True
         visited.add(current)
-
         for a, b in connections:
             neighbor = b if a == current else a if b == current else None
             if neighbor and neighbor not in visited:
@@ -86,12 +84,12 @@ def is_path_from_source_to_sink(source, sink, robots, connections):
 def main():
     pygame.init()
     screen = pygame.display.set_mode((ARENA_WIDTH, ARENA_HEIGHT))
-    pygame.display.set_caption("Hop Count with Guaranteed Source ➜ Sink Connection")
+    pygame.display.set_caption("Hop Count from Sink ➜ Source")
 
     source = Node("Source", 50, ARENA_HEIGHT // 2, (255, 0, 0))
     sink = Node("Sink", ARENA_WIDTH - 50, ARENA_HEIGHT // 2, (0, 128, 0))
 
-    # Reintenta hasta lograr conexión Source -> Sink
+    # Reintentar hasta asegurar que sí hay conexión
     connected = False
     attempts = 0
     while not connected:
@@ -115,30 +113,29 @@ def main():
             if distance(robot, sink) <= CONNECTION_DISTANCE:
                 connect(robot, sink, connections)
 
-        connected = is_path_from_source_to_sink(source, sink, robots, connections)
+        connected = is_path_exists(source, sink, robots, connections)
 
-    print(f"✅ Red generada en intento #{attempts}, hay camino de Source ➜ Sink.")
+    print(f"✅ Red generada en intento #{attempts}, hay camino desde Sink ➜ Source.")
 
-    # Propagar hops
-    propagate_hop_count(source, robots, connections)
+    # 🧠 Propagar hops desde el SINK
+    propagate_hop_count(sink, robots, connections)
 
-    # Mostrar hop count
     print("\n--- DEBUGGING MESSAGES ---")
     for robot in robots:
         print(f"[Robot {robot.robot_id}] hop_count: {robot.hop_count}")
     print("--------------------------")
 
-    # Ruta hasta el Sink
-    last_robot = trace_path_to_sink(robots, sink, connections)
+    # Encontrar el robot conectado al Source
+    last_robot = trace_path_to_target(robots, source, connections)
     if last_robot:
         path = get_path(last_robot)
-        print("\n>>> Optimal Path:")
+        print("\n>>> Optimal Path (Sink ➜ Source):")
         for r in path:
             print(f"Robot {r.robot_id} (hop: {r.hop_count})")
     else:
-        print("❌ No se encontró camino al Sink (esto no debería pasar).")
+        print("❌ No se encontró camino al Source.")
 
-    # Visual loop
+    # Visualización
     running = True
     while running:
         screen.fill((255, 255, 255))
@@ -149,7 +146,6 @@ def main():
             if event.type == pygame.QUIT:
                 running = False
 
-        # Conexiones
         for a, b in connections:
             pygame.draw.line(screen, (180, 180, 180), (a.x, a.y), (b.x, b.y), 1)
 
@@ -161,7 +157,6 @@ def main():
                                  (path[i].x, path[i].y),
                                  (path[i+1].x, path[i+1].y), 3)
 
-        # Robots
         for robot in robots:
             color = (255, 0, 255) if last_robot and robot in get_path(last_robot) else (0, 200, 0)
             robot.draw(screen, color=color)
