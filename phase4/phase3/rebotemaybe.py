@@ -5,8 +5,8 @@ from class_robot import Robot
 
 ARENA_WIDTH, ARENA_HEIGHT = 900, 400
 ROBOT_RADIUS = 10
-N_ROBOTS = 15
-CONNECTION_DISTANCE = 120
+N_ROBOTS = 30
+CONNECTION_DISTANCE = 100
 
 class Node:
     def __init__(self, name, x, y, color):
@@ -67,11 +67,20 @@ def is_path_exists(source, sink, robots, connections):
     return False
 
 def trace_path_to(target_node, robots, connections, hop_attr, parent_attr):
+    connected_robots = []
+
     for robot in robots:
         if any((a == robot and b == target_node) or (b == robot and a == target_node) for a, b in connections):
-            if getattr(robot, hop_attr) is not None:
-                return robot
+            hop_value = getattr(robot, hop_attr)
+            if hop_value is not None:
+                connected_robots.append((robot, hop_value))
+
+    if connected_robots:
+        # Elige el robot conectado con menor hop
+        return min(connected_robots, key=lambda x: x[1])[0]
+    
     return None
+
 
 def get_path(robot, parent_attr):
     path = []
@@ -131,26 +140,60 @@ def main():
 
     path_source = get_path(last_from_source, 'parent_from_source') if last_from_source else []
     path_sink = get_path(last_from_sink, 'parent_from_sink') if last_from_sink else []
+    print("\n>>> Source ➜ Sink robot IDs:")
+    print([r.robot_id for r in path_source])
 
-    # Choose best path
+    print("\n>>> Sink ➜ Source robot IDs:")
+    print([r.robot_id for r in path_sink])
+
+        # Choose best path with explanation
     best_path = []
     direction = ""
+
+    len_source = len(path_source)
+    len_sink = len(path_sink)
+
+    print(f"\n📊 PATH COMPARISON:")
+    print(f" - Source ➜ Sink length: {len_source}")
+    print(f" - Sink ➜ Source length: {len_sink}")
+
     if path_source and path_sink:
-        if len(path_source) <= len(path_sink):
+        if len_source < len_sink:
+            print("🔎 Chose Source ➜ Sink because it is shorter.")
             best_path = path_source
             direction = "Source ➜ Sink"
-        else:
+        elif len_sink < len_source:
+            print("🔎 Chose Sink ➜ Source because it is shorter.")
             best_path = path_sink
             direction = "Sink ➜ Source"
+        else:
+            # Empate de longitud, comparar hops reales
+            total_hops_source = sum(r.hop_from_source for r in path_source if r.hop_from_source is not None)
+            total_hops_sink = sum(r.hop_from_sink for r in path_sink if r.hop_from_sink is not None)
+            print("⚖️ Both paths have the same number of steps.")
+            print(f" - Total hops Source ➜ Sink: {total_hops_source}")
+            print(f" - Total hops Sink ➜ Source: {total_hops_sink}")
+
+            if total_hops_source <= total_hops_sink:
+                print("✅ Source ➜ Sink has fewer or equal hops. Selected.")
+                best_path = path_source
+                direction = "Source ➜ Sink"
+            else:
+                print("✅ Sink ➜ Source has fewer hops. Selected.")
+                best_path = path_sink
+                direction = "Sink ➜ Source"
     elif path_source:
+        print("✔️ Only path from Source ➜ Sink is available.")
         best_path = path_source
         direction = "Source ➜ Sink"
     elif path_sink:
+        print("✔️ Only path from Sink ➜ Source is available.")
         best_path = path_sink
         direction = "Sink ➜ Source"
     else:
-        print("❌ No path found.")
+        print("❌ No valid path found.")
         return
+
 
     print(f"\n>>> BEST PATH ({direction}):")
     for r in best_path:
