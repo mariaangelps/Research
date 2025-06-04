@@ -33,45 +33,53 @@ def connect(a, b, connections):
 #bfs algortihm to calculate number of hops from start node(source) to each robot
 #attr_hop -> hop count
 #attr_parent-> robot that sent message to the curr robot
-def propagate_hop_count(start_node, robots, connections, attr_hop, attr_parent):
-    visited = set()
-    #queue starts with no parent
-    queue = [(start_node, 0, None)]
-
+def propagate_local_hop_count(source, robots, connections, attr_hop, attr_parent):
+    print(f"\n🚀 Starting local token-passing from: {source.name}")
     for robot in robots:
         setattr(robot, attr_hop, None)
         setattr(robot, attr_parent, None)
+
+    queue = [(source, 0, None)]  # (current_node, hop_count, parent)
+    visited = set()
 
     while queue:
         current, hops, parent = queue.pop(0)
 
         if isinstance(current, Robot):
             if getattr(current, attr_hop) is not None:
-                continue
+                continue  # Ya visitado
+
             setattr(current, attr_hop, hops)
             setattr(current, attr_parent, parent if isinstance(parent, Robot) else None)
+
+            print(f"\n🤖 Robot {current.robot_id} received token | Hop: {hops} | From: {parent.robot_id if isinstance(parent, Robot) else 'Source'}")
 
         visited.add(current)
 
         neighbors = []
-        # Find all directly connected neighbors of the current node.
-        # For each connection (a, b), if 'current' is one of them,
-        # add the other as a neighbor.
-        # Then, shuffle the neighbors list to introduce randomness in the order
-        # we explore them. This helps avoid always building the same symmetrical path.
-        # Finally, for each unvisited neighbor, add it to the queue
-        # with its updated hop count (hops + 1) and the current node as its parent.
         for a, b in connections:
-            if a == current:
+            if a == current and b not in visited:
                 neighbors.append(b)
-            elif b == current:
+            elif b == current and a not in visited:
                 neighbors.append(a)
 
-         # introduce random variation in path selection to avoid symmetrical paths       
-        random.shuffle(neighbors) 
+        if isinstance(current, Robot):
+            print(f"  🔍 Robot {current.robot_id} - Checking range (≤ {CONNECTION_DISTANCE} units) for neighbors...")
+            if neighbors:
+                for n in neighbors:
+                    if isinstance(n, Robot):
+                        d = distance(current, n)
+                        print(f"     📏 Robot {n.robot_id} at distance: {d:.2f} units")
+            else:
+                print("     ⚠️ No robots in range.")
+
         for neighbor in neighbors:
-            if neighbor not in visited:
-                queue.append((neighbor, hops + 1, current))
+            if isinstance(neighbor, Robot):
+                current_hop = getattr(neighbor, attr_hop)
+                if current_hop is None:
+                    print(f"     ✅ Passing token to Robot {neighbor.robot_id}")
+                    queue.append((neighbor, hops + 1, current))
+
 
 #check if there is an actual path
 def is_path_exists(source, demand, robots, connections):
@@ -153,8 +161,8 @@ def main():
     print(f"Connected after {attempts} attempts.")
 
     #hop count and parent robot gets assigned to do the bfs
-    propagate_hop_count(source, robots, connections, 'hop_from_source', 'parent_from_source')
-    propagate_hop_count(demand, robots, connections, 'hop_from_demand', 'parent_from_demand')
+    propagate_local_hop_count(source, robots, connections, 'hop_from_source', 'parent_from_source')
+    propagate_local_hop_count(demand, robots, connections, 'hop_from_demand', 'parent_from_demand')
 
     #debugging
     print("\n--- DEBUGGING ---")
