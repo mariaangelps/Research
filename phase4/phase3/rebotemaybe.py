@@ -2,11 +2,12 @@ import pygame
 import random
 import math
 from class_robot import Robot
+from class_source_and_demand import Source, Demand
 
 ARENA_WIDTH, ARENA_HEIGHT = 900, 400
 ROBOT_RADIUS = 10
-N_ROBOTS = 30
-CONNECTION_DISTANCE = 100
+N_ROBOTS = 11
+CONNECTION_DISTANCE = 120
 
 class Node:
     def __init__(self, name, x, y, color):
@@ -47,10 +48,17 @@ def propagate_hop_count(start_node, robots, connections, attr_hop, attr_parent):
 
         visited.add(current)
 
+        neighbors = []
         for a, b in connections:
-            neighbor = b if a == current else a if b == current else None
-            if neighbor and neighbor not in visited:
+            if a == current:
+                neighbors.append(b)
+            elif b == current:
+                neighbors.append(a)
+        random.shuffle(neighbors)  # aleatoriza el orden en que exploras
+        for neighbor in neighbors:
+            if neighbor not in visited:
                 queue.append((neighbor, hops + 1, current))
+
 
 def is_path_exists(source, sink, robots, connections):
     visited = set()
@@ -116,9 +124,11 @@ def main():
                     connect(robots[i], robots[j], connections)
 
         for robot in robots:
-            if distance(robot, source) <= CONNECTION_DISTANCE:
+            # Conecta solo la mitad de los robots al Source
+            if distance(robot, source) <= CONNECTION_DISTANCE and robot.robot_id % 2 == 0:
                 connect(robot, source, connections)
-            if distance(robot, sink) <= CONNECTION_DISTANCE:
+            # Conecta la otra mitad al Sink
+            if distance(robot, sink) <= CONNECTION_DISTANCE and robot.robot_id % 2 == 1:
                 connect(robot, sink, connections)
 
         connected = is_path_exists(source, sink, robots, connections)
@@ -145,6 +155,18 @@ def main():
 
     print("\n>>> Sink ➜ Source robot IDs:")
     print([r.robot_id for r in path_sink])
+    # Comparación de caminos
+    ids_source = [r.robot_id for r in path_source]
+    ids_sink = [r.robot_id for r in path_sink]
+
+    print("\n🧪 CAMINO COMPARISON:")
+    if ids_source == ids_sink:
+        print("✅ Los caminos son exactamente iguales.")
+    elif ids_source == list(reversed(ids_sink)):
+        print("🔁 Los caminos son exactamente inversos.")
+    else:
+        print("✨ Los caminos son diferentes.")
+
 
         # Choose best path with explanation
     best_path = []
@@ -228,12 +250,12 @@ def main():
 
         # Draw best_path in PINK on top
         for i in range(len(best_path) - 1):
-            pygame.draw.line(screen, (255, 0, 255),
+            pygame.draw.line(screen, (0, 180, 0),
                              (best_path[i].x, best_path[i].y),
                              (best_path[i+1].x, best_path[i+1].y), 5)
 
         for robot in robots:
-            color = (255, 0, 255) if robot in best_path else (0, 180, 0)
+            color = (0, 180, 0) if robot in best_path else (0, 100, 255)
             robot.draw(screen, color=color)
 
         pygame.display.flip()

@@ -1,6 +1,9 @@
 import pygame
-
+import math
+import random
+from class_logic import Logic
 class Robot:
+    
     def __init__(self, robot_id, x, y, radius):
         self.robot_id = robot_id
         self.x = x
