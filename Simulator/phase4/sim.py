@@ -34,7 +34,7 @@ def connect(a, b, connections):
 #attr_hop -> hop count
 #attr_parent-> robot that sent message to the curr robot
 def propagate_local_hop_count(source, robots, connections, attr_hop, attr_parent):
-    print(f"\n🚀 Starting local token-passing from: {source.name}")
+    print(f"\nStarting local token-passing from: {source.name}")
     for robot in robots:
         setattr(robot, attr_hop, None)
         setattr(robot, attr_parent, None)
@@ -52,7 +52,7 @@ def propagate_local_hop_count(source, robots, connections, attr_hop, attr_parent
             setattr(current, attr_hop, hops)
             setattr(current, attr_parent, parent if isinstance(parent, Robot) else None)
 
-            print(f"\n🤖 Robot {current.robot_id} received token | Hop: {hops} | From: {parent.robot_id if isinstance(parent, Robot) else 'Source'}")
+            print(f"\nRobot {current.robot_id} received token | Hop: {hops} | From: {parent.robot_id if isinstance(parent, Robot) else 'Source'}")
 
         visited.add(current)
 
@@ -64,12 +64,12 @@ def propagate_local_hop_count(source, robots, connections, attr_hop, attr_parent
                 neighbors.append(a)
 
         if isinstance(current, Robot):
-            print(f"  🔍 Robot {current.robot_id} - Checking range (≤ {CONNECTION_DISTANCE} units) for neighbors...")
+            print(f"  Robot {current.robot_id} - Checking range (≤ {CONNECTION_DISTANCE} units) for neighbors...")
             if neighbors:
                 for n in neighbors:
                     if isinstance(n, Robot):
                         d = distance(current, n)
-                        print(f"     📏 Robot {n.robot_id} at distance: {d:.2f} units")
+                        print(f"  Robot {n.robot_id} at distance: {d:.2f} units")
             else:
                 print("     ⚠️ No robots in range.")
 
@@ -77,7 +77,7 @@ def propagate_local_hop_count(source, robots, connections, attr_hop, attr_parent
             if isinstance(neighbor, Robot):
                 current_hop = getattr(neighbor, attr_hop)
                 if current_hop is None:
-                    print(f"     ✅ Passing token to Robot {neighbor.robot_id}")
+                    print(f"Passing token to Robot {neighbor.robot_id}")
                     queue.append((neighbor, hops + 1, current))
 
 
@@ -167,8 +167,12 @@ def main():
     #debugging
     print("\n--- DEBUGGING ---")
     for r in robots:
-        print(f"Robot {r.robot_id} | SourceHop: {r.hop_from_source} | DemandHop: {r.hop_from_demand}")
+        total_hops = None
+        if r.hop_from_source is not None and r.hop_from_demand is not None:
+            total_hops = r.hop_from_source + r.hop_from_demand
+        print(f"Robot {r.robot_id} | SourceHop: {r.hop_from_source} | DemandHop: {r.hop_from_demand} | TotalHop: {total_hops}")
     print("------------------")
+
     
     #best connected robot to de demnad or source(smallest)
     last_from_source = trace_path_to(demand, robots, connections, 'hop_from_source', 'parent_from_source')
@@ -201,11 +205,11 @@ def main():
 
     len_source = len(path_source)
     len_demand = len(path_demand)
-
+    """
     print("\nPATH COMPARISON:")
     print(f" - Source ➔ Demand length: {len_source}")
     print(f" - Demand ➔ Source length: {len_demand}")
-
+    """
     #cchoose best path based on shortest length or least total hops
     if path_source and path_demand:
         if len_source < len_demand:
@@ -247,6 +251,25 @@ def main():
     for r in best_path:
         h = r.hop_from_source if direction == "Source ➔ Demand" else r.hop_from_demand
         print(f"Robot {r.robot_id} (hop: {h})")
+
+    print("\nExplanation:")
+    for r in robots:
+        if r.hop_from_source is not None and r not in best_path:
+            total_hop = None
+            if r.hop_from_source is not None and r.hop_from_demand is not None:
+                total_hop = r.hop_from_source + r.hop_from_demand
+
+            print(f"Robot {r.robot_id} received the token but is not part of the final path.")
+            parent = r.parent_from_source
+            if parent:
+                print(f"   ↪ It was reached by Robot {parent.robot_id}, but its path did not lead to the destination.")
+            else:
+                print(f"   ↪ It did not contribute to the path connecting the Source to the Demand.")
+
+            if total_hop is not None:
+                print(f"   Its total hop count was {total_hop}, which was higher than the the other robot in range.")
+
+
 
     running = True
     while running:
