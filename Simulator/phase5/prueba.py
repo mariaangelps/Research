@@ -1,6 +1,7 @@
 import pygame
 import random
 import math
+from collections import deque
 from class_robot import Robot
 from class_source_and_demand import Source, Demand
 
@@ -81,6 +82,30 @@ def is_path_exists(source, demand, robots, connections):
                 queue.append(neighbor)
     return False
 
+def existe_ruta_fisica(a, b, conexiones_fisicas):
+    visitado = set()
+    cola = deque()
+    cola.append(a)
+    visitado.add(a)
+
+    while cola:
+        actual = cola.popleft()
+        if actual == b:
+            return True
+
+        vecinos = [
+            r2 for (r1, r2) in conexiones_fisicas if r1 == actual
+        ] + [
+            r1 for (r1, r2) in conexiones_fisicas if r2 == actual
+        ]
+
+        for vecino in vecinos:
+            if vecino not in visitado:
+                visitado.add(vecino)
+                cola.append(vecino)
+
+    return False
+
 def build_optimal_path(start, end, robots, connections, hop_attr):
     path = []
     visited = set()
@@ -90,38 +115,30 @@ def build_optimal_path(start, end, robots, connections, hop_attr):
 
     while current != end:
         visited.add(current)
-        neighbors = [b if a == current else a for a, b in connections if a == current or b == current]
+        # Encontrar candidatos con hop = actual + 1
         candidates = []
-
-        for neighbor in neighbors:
-            if isinstance(neighbor, Robot) and neighbor not in visited:
-                neighbor_hop = getattr(neighbor, hop_attr)
-                if neighbor_hop == current_hop + 1:
-                    score = neighbor_hop + neighbor.robot_id
-                    candidates.append((score, neighbor))
-
-            elif neighbor == end:
-                path.append(end)
-                return path
+        for r in robots:
+            if r in visited:
+                continue
+            if getattr(r, hop_attr) == current_hop + 1:
+                if existe_ruta_fisica(current, r, connections):
+                    score = getattr(r, hop_attr) + r.robot_id
+                    candidates.append((score, r))
 
         if not candidates:
-            print(f"Stopped at hop {current_hop}: no neighnors with hop {current_hop + 1} from Robot {current.robot_id}")
+            print(f"❌ Parado en hop {current_hop}: sin camino físico hacia ningún robot con hop {current_hop + 1} desde {current.robot_id}")
+            break
 
-            #end of condition
-            break  # No hneighbors with next hop: end
+        # Elegir el mejor por score (hop + id)
+        _, best_next = min(candidates, key=lambda x: x[0])
 
-        # Elegir el mejor (hop + ID)
-        _, best_neighbor = min(candidates, key=lambda x: x[0])
-
-        path.append(best_neighbor)
-        visited.add(best_neighbor)
-        current = best_neighbor
-
-        # move to   next hop explícitamente
+        path.append(best_next)
+        visited.add(best_next)
+        current = best_next
         current_hop += 1
 
-    # If the destination is directly connected to the last node, add it.
-    if any((a == current and b == end) or (b == current and a == end) for a, b in connections):
+    # Conexión directa al final
+    if current != end and any((a == current and b == end) or (b == current and a == end) for a, b in connections):
         path.append(end)
 
     return path
@@ -179,6 +196,15 @@ def main():
 
     best_path_from_source = [r for r in build_optimal_path(source, demand, robots, connections, 'hop_from_source') if isinstance(r, Robot)]
     best_path_from_demand = [r for r in build_optimal_path(demand, source, robots, connections, 'hop_from_demand') if isinstance(r, Robot)]
+    print("\n🔍 Verificando conexión física del camino Source ➔ Demand:")
+    for i in range(len(best_path_from_source) - 1):
+        a = best_path_from_source[i]
+        b = best_path_from_source[i + 1]
+        if existe_ruta_fisica(a, b, connections):
+            print(f"✅ Conexión física entre {a.robot_id} y {b.robot_id}")
+        else:
+            print(f"❌ SIN conexión física entre {a.robot_id} y {b.robot_id}")
+
 
     print("\n>>> MEJOR CAMINO Source ➔ Demand (por hop + ID):")
     print([r.robot_id for r in best_path_from_source])
