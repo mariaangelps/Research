@@ -81,41 +81,50 @@ def is_path_exists(source, demand, robots, connections):
                 queue.append(neighbor)
     return False
 
+def build_optimal_path(start, end, robots, connections, hop_attr):
+    path = []
+    visited = set()
+    current = start
 
-def build_path_from_parents(start, end, robots, parent_attr, connections):
+    current_hop = 0 if not isinstance(start, Robot) else getattr(start, hop_attr)
 
-    # Encuentra los robots directamente conectados al "end"
-    end_neighbors = [
-        r for r in robots
-        if getattr(r, parent_attr) is not None and any(
-            (r == a and b == end) or (b == r and a == end)
-            for a, b in connections
-        )
-    ]
+    while current != end:
+        visited.add(current)
+        neighbors = [b if a == current else a for a, b in connections if a == current or b == current]
+        candidates = []
 
-    if not end_neighbors:
-        print(f"⚠️ Ningún robot conectado directamente a {end.name}")
-        return []
+        for neighbor in neighbors:
+            if isinstance(neighbor, Robot) and neighbor not in visited:
+                neighbor_hop = getattr(neighbor, hop_attr)
+                if neighbor_hop == current_hop + 1:
+                    score = neighbor_hop + neighbor.robot_id
+                    candidates.append((score, neighbor))
 
-    # Elegir el mejor vecino conectado al end
-    # usando menor hop + robot_id como criterio
-    best_robot = min(
-        end_neighbors,
-        key=lambda r: getattr(r, f"hop_from_{'source' if 'source' in parent_attr else 'demand'}") + r.robot_id
+            elif neighbor == end:
+                path.append(end)
+                return path
 
-    )
+        if not candidates:
+            print(f"Stopped at hop {current_hop}: no neighnors with hop {current_hop + 1} from Robot {current.robot_id}")
 
-    # Reconstruir el camino desde ese robot hacia el start
-    path = [end, best_robot]
-    current = getattr(best_robot, parent_attr)
+            #end of condition
+            break  # No hneighbors with next hop: end
 
-    while current:
-        path.append(current)
-        current = getattr(current, parent_attr)
+        # Elegir el mejor (hop + ID)
+        _, best_neighbor = min(candidates, key=lambda x: x[0])
 
-    path.append(start)
-    return path[::-1]  # invertir para que vaya de start ➝ end
+        path.append(best_neighbor)
+        visited.add(best_neighbor)
+        current = best_neighbor
 
+        # move to   next hop explícitamente
+        current_hop += 1
+
+    # If the destination is directly connected to the last node, add it.
+    if any((a == current and b == end) or (b == current and a == end) for a, b in connections):
+        path.append(end)
+
+    return path
 
 
 
@@ -168,10 +177,8 @@ def main():
         print(f"Robot {r.robot_id} | SourceHop: {r.hop_from_source} | DemandHop: {r.hop_from_demand} | TotalHop: {total_hops}")
     print("------------------")
 
-    best_path_from_source = [r for r in build_path_from_parents(source, demand, robots, 'parent_from_source', connections) if isinstance(r, Robot)]
-    best_path_from_demand = [r for r in build_path_from_parents(demand, source, robots, 'parent_from_demand', connections) if isinstance(r, Robot)]
-
-
+    best_path_from_source = [r for r in build_optimal_path(source, demand, robots, connections, 'hop_from_source') if isinstance(r, Robot)]
+    best_path_from_demand = [r for r in build_optimal_path(demand, source, robots, connections, 'hop_from_demand') if isinstance(r, Robot)]
 
     print("\n>>> MEJOR CAMINO Source ➔ Demand (por hop + ID):")
     print([r.robot_id for r in best_path_from_source])
