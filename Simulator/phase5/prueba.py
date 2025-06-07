@@ -86,11 +86,7 @@ def build_optimal_path(start, end, robots, connections, hop_attr):
     visited = set()
     current = start
 
-    # Obtener hop del nodo inicial (SourceHop o DemandHop)
-    if isinstance(start, Robot):
-        current_hop = getattr(start, hop_attr)
-    else:
-        current_hop = 0  # Source o Demand tienen hop 0 al iniciar
+    current_hop = 0 if not isinstance(start, Robot) else getattr(start, hop_attr)
 
     while current != end:
         visited.add(current)
@@ -109,20 +105,26 @@ def build_optimal_path(start, end, robots, connections, hop_attr):
                 return path
 
         if not candidates:
-            break  # No hay más vecinos con el hop siguiente
+            print(f"❌ Parado en hop {current_hop}: sin vecinos con hop {current_hop + 1} desde Robot {current.robot_id}")
 
-        # Elegir el de menor (hop + id)
+            break  # No hay vecinos con el siguiente hop: fin del camino
+
+        # Elegir el mejor (hop + ID)
         _, best_neighbor = min(candidates, key=lambda x: x[0])
 
         path.append(best_neighbor)
+        visited.add(best_neighbor)
         current = best_neighbor
-        current_hop = getattr(current, hop_attr)
 
-    # Si está conectado directamente al final, agrégalo
+        # Avanzar al siguiente hop explícitamente
+        current_hop += 1
+
+    # Si el destino está conectado directamente al último nodo, agrégalo
     if any((a == current and b == end) or (b == current and a == end) for a, b in connections):
         path.append(end)
 
     return path
+
 
 
 
