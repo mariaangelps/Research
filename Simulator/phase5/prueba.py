@@ -81,6 +81,8 @@ def is_path_exists(source, demand, robots, connections):
                 queue.append(neighbor)
     return False
 
+
+
 def build_optimal_path(start, end, robots, connections, hop_attr):
     path = []
     visited = set()
@@ -96,7 +98,8 @@ def build_optimal_path(start, end, robots, connections, hop_attr):
         for neighbor in neighbors:
             if isinstance(neighbor, Robot) and neighbor not in visited:
                 neighbor_hop = getattr(neighbor, hop_attr)
-                if neighbor_hop == current_hop + 1:
+                if neighbor_hop is not None and neighbor_hop > current_hop:
+
                     score = neighbor_hop + neighbor.robot_id
                     candidates.append((score, neighbor))
 
