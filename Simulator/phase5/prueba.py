@@ -52,9 +52,9 @@ def propagate_local_hop_count(source, robots, connections, attr_hop, attr_parent
 
             setattr(current, attr_hop, hops)
             setattr(current, attr_parent, parent if isinstance(parent, Robot) else None)
-
+            """"
             print(f"\nRobot {current.robot_id} received token | Hop: {hops} | From: {parent.robot_id if isinstance(parent, Robot) else 'Source'}")
-
+            """
         visited.add(current)
 
         neighbors = []
@@ -105,6 +105,8 @@ def existe_ruta_fisica(a, b, conexiones_fisicas):
                 cola.append(vecino)
 
     return False
+def get_node_name(n):
+    return n.name if isinstance(n, Node) else f"Robot {n.robot_id}"
 
 def build_optimal_path(start, end, robots, connections, hop_attr):
     path = []
@@ -115,7 +117,6 @@ def build_optimal_path(start, end, robots, connections, hop_attr):
 
     while current != end:
         visited.add(current)
-        # Encontrar candidatos con hop = actual + 1
         candidates = []
         for r in robots:
             if r in visited:
@@ -125,11 +126,15 @@ def build_optimal_path(start, end, robots, connections, hop_attr):
                     score = getattr(r, hop_attr) + r.robot_id
                     candidates.append((score, r))
 
+        #DEBUGGING
         if not candidates:
-            print(f"❌ Parado en hop {current_hop}: sin camino físico hacia ningún robot con hop {current_hop + 1} desde {current.robot_id}")
+            # Don't print the warning if we can still connect to the endpoint directly
+            can_connect_to_end = isinstance(end, Node) and existe_ruta_fisica(current, end, connections)
+            if not can_connect_to_end:
+                print(f"❌ Stopped at hop {current_hop}: no physical path to any robot with hop {current_hop + 1} from {get_node_name(current)}")
             break
 
-        # Elegir el mejor por score (hop + id)
+
         _, best_next = min(candidates, key=lambda x: x[0])
 
         path.append(best_next)
@@ -137,11 +142,20 @@ def build_optimal_path(start, end, robots, connections, hop_attr):
         current = best_next
         current_hop += 1
 
-    # Conexión directa al final
-    if current != end and any((a == current and b == end) or (b == current and a == end) for a, b in connections):
-        path.append(end)
+    #checks if we can connect to the end
+    if isinstance(end, Node):
+        last = path[-1] if path else None
+        if last and existe_ruta_fisica(last, end, connections):
+            path.append(end)
+
+    #checks if we can connect to the beginning
+    if isinstance(start, Node):
+        first = path[0] if path else None
+        if first and existe_ruta_fisica(start, first, connections):
+            path.insert(0, start)
 
     return path
+
 
 
 
@@ -194,23 +208,27 @@ def main():
         print(f"Robot {r.robot_id} | SourceHop: {r.hop_from_source} | DemandHop: {r.hop_from_demand} | TotalHop: {total_hops}")
     print("------------------")
 
-    best_path_from_source = [r for r in build_optimal_path(source, demand, robots, connections, 'hop_from_source') if isinstance(r, Robot)]
-    best_path_from_demand = [r for r in build_optimal_path(demand, source, robots, connections, 'hop_from_demand') if isinstance(r, Robot)]
+    best_path_from_source = build_optimal_path(source, demand, robots, connections, 'hop_from_source')
+    best_path_from_demand = build_optimal_path(demand, source, robots, connections, 'hop_from_demand') 
+    
+    #debugging
+    """
     print("\n🔍 Verificando conexión física del camino Source ➔ Demand:")
     for i in range(len(best_path_from_source) - 1):
         a = best_path_from_source[i]
         b = best_path_from_source[i + 1]
         if existe_ruta_fisica(a, b, connections):
-            print(f"✅ Conexión física entre {a.robot_id} y {b.robot_id}")
+            print(f"Conexión física entre {get_node_name(a)} y {get_node_name(b)}")
         else:
-            print(f"❌ SIN conexión física entre {a.robot_id} y {b.robot_id}")
+            print(f"SIN conexión física entre {get_node_name(a)} y {get_node_name(b)}")
+    """
 
 
-    print("\n>>> MEJOR CAMINO Source ➔ Demand (por hop + ID):")
-    print([r.robot_id for r in best_path_from_source])
+    print("\n>>> Best Path Source ➔ Demand (por hop + ID):")
+    print([get_node_name(r) for r in best_path_from_source])
 
-    print("\n>>> MEJOR CAMINO Demand ➔ Source (por hop + ID):")
-    print([r.robot_id for r in best_path_from_demand])
+    print("\n>>> Best Path Demand ➔ Source (por hop + ID):")
+    print([get_node_name(r) for r in best_path_from_demand])
 
     running = True
     while running:
@@ -233,8 +251,15 @@ def main():
             pygame.draw.line(screen, (0, 100, 255), (best_path_from_demand[i].x, best_path_from_demand[i].y),
                              (best_path_from_demand[i + 1].x, best_path_from_demand[i + 1].y), 3)
 
+        # Create a set of robots in the optimal path for quick lookup
+        robots_in_path = {r for r in best_path_from_source if isinstance(r, Robot)}
+
         for robot in robots:
-            robot.draw(screen, color=(0, 100, 255))
+            if robot in robots_in_path:
+                robot.draw(screen, color=(0, 200, 0))  # green
+            else:
+                robot.draw(screen, color=(0, 100, 255))  # blue
+
 
         pygame.display.flip()
 
