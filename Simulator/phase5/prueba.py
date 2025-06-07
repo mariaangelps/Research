@@ -81,11 +81,16 @@ def is_path_exists(source, demand, robots, connections):
                 queue.append(neighbor)
     return False
 
-# NUEVA FUNCIÓN: Construye el camino óptimo usando hop + robot_id
 def build_optimal_path(start, end, robots, connections, hop_attr):
     path = []
     visited = set()
     current = start
+
+    # Obtener hop del nodo inicial (SourceHop o DemandHop)
+    if isinstance(start, Robot):
+        current_hop = getattr(start, hop_attr)
+    else:
+        current_hop = 0  # Source o Demand tienen hop 0 al iniciar
 
     while current != end:
         visited.add(current)
@@ -94,9 +99,9 @@ def build_optimal_path(start, end, robots, connections, hop_attr):
 
         for neighbor in neighbors:
             if isinstance(neighbor, Robot) and neighbor not in visited:
-                hop_val = getattr(neighbor, hop_attr)
-                if hop_val is not None:
-                    score = hop_val + neighbor.robot_id
+                neighbor_hop = getattr(neighbor, hop_attr)
+                if neighbor_hop == current_hop + 1:
+                    score = neighbor_hop + neighbor.robot_id
                     candidates.append((score, neighbor))
 
             elif neighbor == end:
@@ -104,18 +109,29 @@ def build_optimal_path(start, end, robots, connections, hop_attr):
                 return path
 
         if not candidates:
-            break  # No hay más camino posible
+            break  # No hay más vecinos con el hop siguiente
 
+        # Elegir el de menor (hop + id)
         _, best_neighbor = min(candidates, key=lambda x: x[0])
+
         path.append(best_neighbor)
         current = best_neighbor
+        current_hop = getattr(current, hop_attr)
+
+    # Si está conectado directamente al final, agrégalo
+    if any((a == current and b == end) or (b == current and a == end) for a, b in connections):
+        path.append(end)
 
     return path
+
+
+
+
 
 def main():
     pygame.init()
     screen = pygame.display.set_mode((ARENA_WIDTH, ARENA_HEIGHT))
-    pygame.display.set_caption("Hop Count - Source & Demand Paths Compared")
+    pygame.display.set_caption("Hop Count - Source & Demand Optimal Path")
 
     source = Node("Source", 50, ARENA_HEIGHT // 2, (255, 0, 0))
     demand = Node("Demand", ARENA_WIDTH - 50, ARENA_HEIGHT // 2, (0, 128, 0))
@@ -158,14 +174,14 @@ def main():
         print(f"Robot {r.robot_id} | SourceHop: {r.hop_from_source} | DemandHop: {r.hop_from_demand} | TotalHop: {total_hops}")
     print("------------------")
 
-    optimal_path_source_to_demand = build_optimal_path(source, demand, robots, connections, 'hop_from_source')
-    optimal_path_demand_to_source = build_optimal_path(demand, source, robots, connections, 'hop_from_demand')
+    best_path_from_source = [r for r in build_optimal_path(source, demand, robots, connections, 'hop_from_source') if isinstance(r, Robot)]
+    best_path_from_demand = [r for r in build_optimal_path(demand, source, robots, connections, 'hop_from_demand') if isinstance(r, Robot)]
 
-    print("\n>>> OPTIMAL PATH Source ➔ Demand:")
-    print([r.robot_id for r in optimal_path_source_to_demand if isinstance(r, Robot)])
+    print("\n>>> MEJOR CAMINO Source ➔ Demand (por hop + ID):")
+    print([r.robot_id for r in best_path_from_source])
 
-    print("\n>>> OPTIMAL PATH Demand ➔ Source:")
-    print([r.robot_id for r in optimal_path_demand_to_source if isinstance(r, Robot)])
+    print("\n>>> MEJOR CAMINO Demand ➔ Source (por hop + ID):")
+    print([r.robot_id for r in best_path_from_demand])
 
     running = True
     while running:
@@ -180,13 +196,13 @@ def main():
         for a, b in connections:
             pygame.draw.line(screen, (210, 210, 210), (a.x, a.y), (b.x, b.y), 1)
 
-        for i in range(len(optimal_path_source_to_demand) - 1):
-            pygame.draw.line(screen, (255, 0, 0), (optimal_path_source_to_demand[i].x, optimal_path_source_to_demand[i].y),
-                             (optimal_path_source_to_demand[i + 1].x, optimal_path_source_to_demand[i + 1].y), 3)
+        for i in range(len(best_path_from_source) - 1):
+            pygame.draw.line(screen, (255, 0, 0), (best_path_from_source[i].x, best_path_from_source[i].y),
+                             (best_path_from_source[i + 1].x, best_path_from_source[i + 1].y), 3)
 
-        for i in range(len(optimal_path_demand_to_source) - 1):
-            pygame.draw.line(screen, (0, 100, 255), (optimal_path_demand_to_source[i].x, optimal_path_demand_to_source[i].y),
-                             (optimal_path_demand_to_source[i + 1].x, optimal_path_demand_to_source[i + 1].y), 3)
+        for i in range(len(best_path_from_demand) - 1):
+            pygame.draw.line(screen, (0, 100, 255), (best_path_from_demand[i].x, best_path_from_demand[i].y),
+                             (best_path_from_demand[i + 1].x, best_path_from_demand[i + 1].y), 3)
 
         for robot in robots:
             robot.draw(screen, color=(0, 100, 255))
