@@ -271,10 +271,11 @@ def main():
         # Create a set of robots in the optimal path for quick lookup
         robots_in_path = {r for r in best_path_from_source if isinstance(r, Robot)}
         
-        # Dibuja el rango de cada robot como un círculo sin relleno
+        """
+        # Range visually detected
         for robot in robots:
             pygame.draw.circle(screen, (180, 180, 180), (int(robot.x), int(robot.y)), CONNECTION_DISTANCE, 1)
-
+        """
 
         for robot in robots:
             if robot in robots_in_path:
