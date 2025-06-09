@@ -5,9 +5,10 @@ from collections import deque
 from class_robot import Robot
 from class_source_and_demand import Source, Demand
 
-ARENA_WIDTH, ARENA_HEIGHT = 600, 300
+ARENA_WIDTH, ARENA_HEIGHT = 1300, 500
 ROBOT_RADIUS = 10
-N_ROBOTS = 18
+N_ROBOTS = 20
+N_EXTRA_ROBOTS = 10
 CONNECTION_DISTANCE = 120
 
 class Node:
@@ -178,9 +179,14 @@ def main():
         connections = []
 
         for i in range(N_ROBOTS):
-            x = random.randint(60, ARENA_WIDTH - 60)
-            y = random.randint(60, ARENA_HEIGHT - 60)
+            x = random.randint(100, ARENA_WIDTH - 80)
+            y = random.randint(100, ARENA_HEIGHT - 80)
             robots.append(Robot(i, x, y, ROBOT_RADIUS))
+
+        for j in range(N_EXTRA_ROBOTS):
+            x = random.randint(100, ARENA_WIDTH - 80)
+            y = random.randint(100, ARENA_HEIGHT - 80)
+            robots.append(Robot(N_ROBOTS + j, x, y, ROBOT_RADIUS))
 
         for i in range(len(robots)):
             for j in range(i + 1, len(robots)):
