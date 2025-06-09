@@ -5,9 +5,9 @@ from collections import deque
 from class_robot import Robot
 from class_source_and_demand import Source, Demand
 
-ARENA_WIDTH, ARENA_HEIGHT = 900, 400
+ARENA_WIDTH, ARENA_HEIGHT = 600, 300
 ROBOT_RADIUS = 10
-N_ROBOTS = 11
+N_ROBOTS = 18
 CONNECTION_DISTANCE = 120
 
 class Node:
@@ -131,7 +131,7 @@ def build_optimal_path(start, end, robots, connections, hop_attr):
             # Don't print the warning if we can still connect to the endpoint directly
             can_connect_to_end = isinstance(end, Node) and existe_ruta_fisica(current, end, connections)
             if not can_connect_to_end:
-                print(f"❌ Stopped at hop {current_hop}: no physical path to any robot with hop {current_hop + 1} from {get_node_name(current)}")
+                print(f" Stopped at hop {current_hop}: no physical path to any robot with hop {current_hop + 1} from {get_node_name(current)}")
             break
 
 
@@ -187,6 +187,9 @@ def main():
                 if distance(robots[i], robots[j]) <= CONNECTION_DISTANCE:
                     connect(robots[i], robots[j], connections)
 
+
+        
+
         for robot in robots:
             if distance(robot, source) <= CONNECTION_DISTANCE:
                 connect(robot, source, connections)
@@ -196,6 +199,20 @@ def main():
         connected = is_path_exists(source, demand, robots, connections)
 
     print(f"Connected after {attempts} attempts.")
+
+    print("\n--- DEBUGGING: Robots in range ---")
+    for robot in robots:
+            in_range = []
+            for other in robots:
+                if robot != other and distance(robot, other) <= CONNECTION_DISTANCE:
+                    in_range.append(other.robot_id)
+            if in_range:
+                print(f" Robot {robot.robot_id} can directly connect to robots: {in_range}")
+            else:
+                print(f" Robot {robot.robot_id} is isolated — no robots in range")
+
+
+
 
     propagate_local_hop_count(source, robots, connections, 'hop_from_source', 'parent_from_source')
     propagate_local_hop_count(demand, robots, connections, 'hop_from_demand', 'parent_from_demand')
@@ -224,10 +241,10 @@ def main():
     """
 
 
-    print("\n>>> Best Path Source ➔ Demand (por hop + ID):")
+    print("\n>>> Best Path Source ➔ Demand:")
     print([get_node_name(r) for r in best_path_from_source])
 
-    print("\n>>> Best Path Demand ➔ Source (por hop + ID):")
+    print("\n>>> Best Path Demand ➔ Source :")
     print([get_node_name(r) for r in best_path_from_demand])
 
     running = True
@@ -253,6 +270,11 @@ def main():
 
         # Create a set of robots in the optimal path for quick lookup
         robots_in_path = {r for r in best_path_from_source if isinstance(r, Robot)}
+        
+        # Dibuja el rango de cada robot como un círculo sin relleno
+        for robot in robots:
+            pygame.draw.circle(screen, (180, 180, 180), (int(robot.x), int(robot.y)), CONNECTION_DISTANCE, 1)
+
 
         for robot in robots:
             if robot in robots_in_path:
