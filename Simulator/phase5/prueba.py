@@ -5,10 +5,10 @@ from collections import deque
 from class_robot import Robot
 from class_source_and_demand import Source, Demand
 
-ARENA_WIDTH, ARENA_HEIGHT = 1300, 500
+ARENA_WIDTH, ARENA_HEIGHT = 1000, 400
 ROBOT_RADIUS = 10
 N_ROBOTS = 20
-N_EXTRA_ROBOTS = 10
+#N_EXTRA_ROBOTS = 10
 CONNECTION_DISTANCE = 120
 
 class Node:
@@ -37,22 +37,32 @@ def propagate_local_hop_count(source, robots, connections, attr_hop, attr_parent
         setattr(robot, attr_hop, None)
         setattr(robot, attr_parent, None)
 
-    queue = [(source, 0, None)]
+    queue = []
     visited = set()
+
+    for a, b in connections:
+        if a == source and isinstance(b, Robot):
+            queue.append((b, 1, source))
+        elif b == source and isinstance(a, Robot):
+            queue.append((a, 1, source))
+
+    
+    visited.add(source)
+
 
     while queue:
         current, hops, parent = queue.pop(0)
 
         if isinstance(current, Robot):
-            current_score = hops + current.robot_id
             existing_hop = getattr(current, attr_hop)
-            existing_score = None if existing_hop is None else existing_hop + current.robot_id
 
-            if existing_score is not None and current_score >= existing_score:
+            # Only update if it's the first time or we found a shorter path
+            if existing_hop is not None and hops >= existing_hop:
                 continue
 
             setattr(current, attr_hop, hops)
             setattr(current, attr_parent, parent if isinstance(parent, Robot) else None)
+
             """"
             print(f"\nRobot {current.robot_id} received token | Hop: {hops} | From: {parent.robot_id if isinstance(parent, Robot) else 'Source'}")
             """
@@ -109,6 +119,9 @@ def existe_ruta_fisica(a, b, conexiones_fisicas):
 def get_node_name(n):
     return n.name if isinstance(n, Node) else f"Robot {n.robot_id}"
 
+def estan_directamente_conectados(a, b, connections):
+    return (a, b) in connections or (b, a) in connections
+
 def build_optimal_path(start, end, robots, connections, hop_attr):
     path = []
     visited = set()
@@ -123,14 +136,19 @@ def build_optimal_path(start, end, robots, connections, hop_attr):
             if r in visited:
                 continue
             if getattr(r, hop_attr) == current_hop + 1:
-                if existe_ruta_fisica(current, r, connections):
-                    score = getattr(r, hop_attr) + r.robot_id
-                    candidates.append((score, r))
+                if estan_directamente_conectados(current, r, connections):
+                    hop_from_source = getattr(r, 'hop_from_source')
+                    hop_from_demand = getattr(r, 'hop_from_demand')
+                    if hop_from_source is not None and hop_from_demand is not None:
+                        total_hop = hop_from_source + hop_from_demand
+                        score = total_hop + r.robot_id
+                        candidates.append((score, r))
+
 
         #DEBUGGING
         if not candidates:
             # Don't print the warning if we can still connect to the endpoint directly
-            can_connect_to_end = isinstance(end, Node) and existe_ruta_fisica(current, end, connections)
+            can_connect_to_end = isinstance(end, Node) and estan_directamente_conectados(current, end, connections)
             if not can_connect_to_end:
                 print(f" Stopped at hop {current_hop}: no physical path to any robot with hop {current_hop + 1} from {get_node_name(current)}")
             break
@@ -146,7 +164,7 @@ def build_optimal_path(start, end, robots, connections, hop_attr):
     #checks if we can connect to the end
     if isinstance(end, Node):
         last = path[-1] if path else None
-        if last and existe_ruta_fisica(last, end, connections):
+        if last and estan_directamente_conectados(last, end, connections):
             path.append(end)
 
     #checks if we can connect to the beginning
@@ -182,12 +200,12 @@ def main():
             x = random.randint(100, ARENA_WIDTH - 80)
             y = random.randint(100, ARENA_HEIGHT - 80)
             robots.append(Robot(i, x, y, ROBOT_RADIUS))
-
+        """
         for j in range(N_EXTRA_ROBOTS):
             x = random.randint(100, ARENA_WIDTH - 80)
             y = random.randint(100, ARENA_HEIGHT - 80)
             robots.append(Robot(N_ROBOTS + j, x, y, ROBOT_RADIUS))
-
+        """
         for i in range(len(robots)):
             for j in range(i + 1, len(robots)):
                 if distance(robots[i], robots[j]) <= CONNECTION_DISTANCE:
@@ -205,8 +223,8 @@ def main():
         connected = is_path_exists(source, demand, robots, connections)
 
     print(f"Connected after {attempts} attempts.")
+    print("\n --- DEBUGGING: Robots in range ---")
 
-    print("\n--- DEBUGGING: Robots in range ---")
     for robot in robots:
             in_range = []
             for other in robots:
@@ -235,7 +253,7 @@ def main():
     best_path_from_demand = build_optimal_path(demand, source, robots, connections, 'hop_from_demand') 
     
     #debugging
-    """
+    
     print("\n🔍 Verificando conexión física del camino Source ➔ Demand:")
     for i in range(len(best_path_from_source) - 1):
         a = best_path_from_source[i]
@@ -244,7 +262,7 @@ def main():
             print(f"Conexión física entre {get_node_name(a)} y {get_node_name(b)}")
         else:
             print(f"SIN conexión física entre {get_node_name(a)} y {get_node_name(b)}")
-    """
+    
 
 
     print("\n>>> Best Path Source ➔ Demand:")
@@ -277,11 +295,12 @@ def main():
         # Create a set of robots in the optimal path for quick lookup
         robots_in_path = {r for r in best_path_from_source if isinstance(r, Robot)}
         
-        """
+
+        
         # Range visually detected
         for robot in robots:
             pygame.draw.circle(screen, (180, 180, 180), (int(robot.x), int(robot.y)), CONNECTION_DISTANCE, 1)
-        """
+        
 
         for robot in robots:
             if robot in robots_in_path:
