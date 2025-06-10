@@ -5,9 +5,9 @@ from collections import deque
 from class_robot import Robot
 from class_source_and_demand import Source, Demand
 
-ARENA_WIDTH, ARENA_HEIGHT = 1000, 400
+ARENA_WIDTH, ARENA_HEIGHT = 1000, 600
 ROBOT_RADIUS = 10
-N_ROBOTS = 20
+N_ROBOTS = 40
 #N_EXTRA_ROBOTS = 10
 CONNECTION_DISTANCE = 120
 
@@ -133,6 +133,15 @@ def build_optimal_path(start, end, robots, connections, hop_attr):
 
     while current != end:
         visited.add(current)
+        # Priority: if robot can directly sense Demand, connect immediately
+        if isinstance(end, Node) and distance(current, end) <= CONNECTION_DISTANCE:
+            if not path or path[-1] != current:
+                path.append(current)
+            path.append(end)
+            break
+        
+
+
         candidates = []
 
         for r in robots:
@@ -159,18 +168,19 @@ def build_optimal_path(start, end, robots, connections, hop_attr):
         current = best_next
         current_hop += 1
 
+    """"
     # connect to the end 
     if isinstance(end, Node):
         last = path[-1] if path else None
         if last and existe_ruta_fisica(last, end, connections):
             path.append(end)
-
+    """
     # Conecta to the beginning 
     if isinstance(start, Node):
         first = path[0] if path else None
-        if first and existe_ruta_fisica(start, first, connections):
+        if first and distance(start, first) <= CONNECTION_DISTANCE:
             path.insert(0, start)
-
+    
     return path
 
 
@@ -211,7 +221,7 @@ def main():
 
 
         
-
+        #assures robots are inside the conection range
         for robot in robots:
             if distance(robot, source) <= CONNECTION_DISTANCE:
                 connect(robot, source, connections)
@@ -234,6 +244,19 @@ def main():
             else:
                 print(f" Robot {robot.robot_id} is isolated — no robots in range")
 
+    print("\n--- DEBUGGING: Source direct connections ---")
+    direct_from_source = []
+    for robot in robots:
+        if distance(source, robot) <= CONNECTION_DISTANCE:
+            direct_from_source.append(robot.robot_id)
+    print(f"Source can directly connect to robots: {direct_from_source}")
+
+    print("\n--- DEBUGGING: Demand direct connections ---")
+    direct_from_demand = []
+    for robot in robots:
+        if distance(demand, robot) <= CONNECTION_DISTANCE:
+            direct_from_demand.append(robot.robot_id)
+    print(f"Demand can directly connect to robots: {direct_from_demand}")
 
 
     propagate_local_hop_count(source, robots, connections, 'hop_from_source', 'parent_from_source')
