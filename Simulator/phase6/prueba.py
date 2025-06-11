@@ -310,7 +310,7 @@ def main():
     print("\n>>> Best Path Demand ➔ Source :")
     print([get_node_name(r) for r in best_path_from_demand])
 
-    repulsion_applied = False  # Only apply repulsion and update once
+    debug_printed=False #for repulsion
 
     running = True
     while running:
@@ -320,57 +320,89 @@ def main():
 
         #obstacles 
         # Repulsion force (only visualization for now)
-        
         for obstacle in obstacles:
             obstacle.draw(screen)
-        if not repulsion_applied:
 
+            # Apply repulsion
             for robot in robots:
                 for obstacle in obstacles:
                     dx = robot.x - obstacle.x
                     dy = robot.y - obstacle.y
                     dist = math.hypot(dx, dy)
-                    if dist < 100:  # only repel if robot is close
+                    if dist < 100:
                         if dist != 0:
                             dx /= dist
                             dy /= dist
-                        repel_strength = 1.5 * (100 - dist) / 100  # inverse relation to distance
+                        repel_strength = 1.5 * (100 - dist) / 100
                         robot.x += dx * repel_strength
                         robot.y += dy * repel_strength
 
+            # Recalculate connections
             connections = []
             for i in range(len(robots)):
                 for j in range(i + 1, len(robots)):
                     if distance(robots[i], robots[j]) <= CONNECTION_DISTANCE:
                         connect(robots[i], robots[j], connections)
 
-            # Also reconnect to source/demand if within range
             for robot in robots:
                 if distance(robot, source) <= CONNECTION_DISTANCE:
                     connect(robot, source, connections)
                 if distance(robot, demand) <= CONNECTION_DISTANCE:
                     connect(robot, demand, connections)
 
-            # Recalculate hop counts and optimal paths after repulsion
+            # Recalculate hops
             propagate_local_hop_count(source, robots, connections, 'hop_from_source', 'parent_from_source')
             propagate_local_hop_count(demand, robots, connections, 'hop_from_demand', 'parent_from_demand')
+
             best_path_from_source = build_optimal_path(source, demand, robots, connections, 'hop_from_source')
             best_path_from_demand = build_optimal_path(demand, source, robots, connections, 'hop_from_demand')
 
-            print("\n--- AFTER REPULSION: Hop Counts ---")
-            for r in robots:
-                total_hops = (
-                    r.hop_from_source + r.hop_from_demand
-                    if r.hop_from_source is not None and r.hop_from_demand is not None
-                    else None
-                )
-                print(f"Robot {r.robot_id} | SourceHop: {r.hop_from_source} | DemandHop: {r.hop_from_demand} | TotalHop: {total_hops}")
+            if not debug_printed:
+                print("\n--- DEBUGGING: Robots in range ---")
+                for robot in robots:
+                    in_range = []
+                    for other in robots:
+                        if robot != other and distance(robot, other) <= CONNECTION_DISTANCE:
+                            in_range.append(other.robot_id)
+                    if in_range:
+                        print(f" Robot {robot.robot_id} can directly connect to robots: {in_range}")
+                    else:
+                        print(f" Robot {robot.robot_id} is isolated — no robots in range")
+                print("\n--- DEBUGGING: Source direct connections ---")
+                direct_from_source = []
+                for robot in robots:
+                    if distance(source, robot) <= CONNECTION_DISTANCE:
+                        direct_from_source.append(robot.robot_id)
+                print(f"Source can directly connect to robots after repulsion: {direct_from_source}")
 
-            print("\n>>> Best Path Source ➔ Demand (After Repulsion):")
-            print([get_node_name(r) for r in best_path_from_source])
+                print("\n--- DEBUGGING: Demand direct connections ---")
+                direct_from_demand = []
+                for robot in robots:
+                    if distance(demand, robot) <= CONNECTION_DISTANCE:
+                        direct_from_demand.append(robot.robot_id)
+                print(f"Demand can directly connect to robots after repulsion: {direct_from_demand}")
 
-            print("\n>>> Best Path Demand ➔ Source (After Repulsion):")
-            print([get_node_name(r) for r in best_path_from_demand])
+                print("\n--- UPDATED AFTER REPULSION ---")
+                for r in robots:
+                    total_hops = (
+                        r.hop_from_source + r.hop_from_demand
+                        if r.hop_from_source is not None and r.hop_from_demand is not None
+                        else None
+                    )
+                    print(f"Robot {r.robot_id} | SourceHop: {r.hop_from_source} | DemandHop: {r.hop_from_demand} | TotalHop: {total_hops}")
+
+                print("\n>>> Best Path Source ➔ Demand (After Repulsion):")
+                print([get_node_name(r) for r in best_path_from_source])
+                print("\n>>> Best Path Demand ➔ Source (After Repulsion):")
+                print([get_node_name(r) for r in best_path_from_demand])
+
+                
+
+                debug_printed = True  
+
+
+
+
 
         """
         print("\n Network updated after repulsion:")
