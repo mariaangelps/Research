@@ -502,6 +502,21 @@ def main():
                 pair = (a, b)  # Mantén el orden para incluir Source/Demand con robots
             fixed_connections.add(pair)
 
+        # También agregar las conexiones del camino inverso Demand ➔ Source
+    for i in range(len(best_path_from_demand) - 1):
+        a = best_path_from_demand[i]
+        b = best_path_from_demand[i + 1]
+
+        if isinstance(a, (Robot, Node)) and isinstance(b, (Robot, Node)):
+            if isinstance(a, Robot) and isinstance(b, Robot):
+                pair = (a, b) if a.robot_id < b.robot_id else (b, a)
+            else:
+                pair = (a, b)
+            fixed_connections.add(pair)
+
+
+            
+    
 
 
 
@@ -524,6 +539,14 @@ def main():
 
     print("\n>>> Best Path Demand ➔ Source :")
     print([get_node_name(r) for r in best_path_from_demand])
+
+    print("\n>>> Robots in ORANGE Path (Source ➔ Demand):")
+    orange_path_src = [f"R{n.robot_id}" for n in best_path_from_source if isinstance(n, Robot)]
+    print(" ➔ ".join(orange_path_src))
+
+    print("\n>>> Robots in ORANGE Path (Demand ➔ Source):")
+    orange_path_dst = [f"R{n.robot_id}" for n in best_path_from_demand if isinstance(n, Robot)]
+    print(" ➔ ".join(orange_path_dst))
 
     debug_printed=False #for repulsion
 
@@ -582,9 +605,8 @@ def main():
                     connect(demand, last, connections)
                     best_path_from_source.append(demand)
 
-            
-
-
+           
+    
         apply_virtual_forces(robots, obstacles, best_path_from_source, CONNECTION_DISTANCE, fixed_connections)
        
 
