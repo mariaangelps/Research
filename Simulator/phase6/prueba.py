@@ -134,7 +134,8 @@ def existe_ruta_fisica(a, b, conexiones_fisicas):
 def get_node_name(n):
     return n.name if isinstance(n, Node) else f"Robot {n.robot_id}"
 
-def apply_virtual_forces(robots, obstacles, best_path, connection_distance):
+def apply_virtual_forces(robots, obstacles, best_path, connection_distance, optimal_path_links):
+
     # --- 1. Repulsion from obstacles ---
     for robot in robots:
         for obstacle in obstacles:
@@ -216,6 +217,55 @@ def apply_virtual_forces(robots, obstacles, best_path, connection_distance):
                     pull_strength = 0.3 * (dist / connection_distance)
                     robot.x += dx * pull_strength
                     robot.y += dy * pull_strength
+    # --- 4. Restoring force for previously connected robots ---
+    # --- 4. Restoring force for previously connected robots ---
+    for idx in range(len(best_path) - 1):
+        r1 = best_path[idx]
+        r2 = best_path[idx + 1]
+
+        if isinstance(r1, Robot) and isinstance(r2, Robot):
+            dx = r2.x - r1.x
+            dy = r2.y - r1.y
+            dist = math.hypot(dx, dy)
+
+            if dist > connection_distance:
+                dx /= dist
+                dy /= dist
+
+                # increase force if they are too far
+                strength_factor = min(1.5, (dist - connection_distance) / connection_distance)
+                restoring_strength = 1.0 * strength_factor  # you can bump this up
+
+                # Pull both toward each other
+                r1.x += dx * restoring_strength * 0.5
+                r1.y += dy * restoring_strength * 0.5
+                r2.x -= dx * restoring_strength * 0.5
+                r2.y -= dy * restoring_strength * 0.5
+
+
+    
+    # --- 5. Restoring force for fixed optimal path connections ---
+    for (r1, r2) in optimal_path_links:
+        if not isinstance(r1, Robot) or not isinstance(r2, Robot):
+            continue
+
+        dx = r2.x - r1.x
+        dy = r2.y - r1.y
+        dist = math.hypot(dx, dy)
+
+        if dist > 0.8 * connection_distance:  # even if still "connected", keep them close
+            dx /= dist
+            dy /= dist
+
+            restoring_force = 1.5 * (dist - connection_distance) / connection_distance
+
+            r1.x += dx * restoring_force * 0.5
+            r1.y += dy * restoring_force * 0.5
+            r2.x -= dx * restoring_force * 0.5
+            r2.y -= dy * restoring_force * 0.5
+
+
+
 
 def build_optimal_path(start, end, robots, connections, hop_attr):
     path = []
@@ -372,7 +422,21 @@ def main():
 
     best_path_from_source = build_optimal_path(source, demand, robots, connections, 'hop_from_source')
     best_path_from_demand = build_optimal_path(demand, source, robots, connections, 'hop_from_demand') 
-    
+
+
+    fixed_connections = set()
+    for i in range(len(best_path_from_source) - 1):
+        a = best_path_from_source[i]
+        b = best_path_from_source[i + 1]
+        if isinstance(a, Robot) and isinstance(b, Robot):
+            # store only one direction to avoid duplication
+            pair = (a, b) if a.robot_id < b.robot_id else (b, a)
+            fixed_connections.add(pair)
+
+
+
+
+
     #debugging
     """
     print("\n Verificando conexión física del camino Source ➔ Demand:")
@@ -406,7 +470,8 @@ def main():
             obstacle.draw(screen)
             pygame.draw.circle(screen, (255, 200, 200), (int(obstacle.x), int(obstacle.y)), CONNECTION_DISTANCE, 1)
 
-        apply_virtual_forces(robots, obstacles, best_path_from_source, CONNECTION_DISTANCE)
+
+
 
         # Recalculate connections based on new positions
         connections = []
@@ -427,6 +492,20 @@ def main():
 
         best_path_from_source = build_optimal_path(source, demand, robots, connections, 'hop_from_source')
         best_path_from_demand = build_optimal_path(demand, source, robots, connections, 'hop_from_demand')
+        
+
+        optimal_path_links = set()
+        for i in range(len(best_path_from_source) - 1):
+            a = best_path_from_source[i]
+            b = best_path_from_source[i + 1]
+            if isinstance(a, Robot) and isinstance(b, Robot):
+                optimal_path_links.add((a, b))
+                optimal_path_links.add((b, a))
+
+        apply_virtual_forces(robots, obstacles, best_path_from_source, CONNECTION_DISTANCE, fixed_connections)
+
+
+
 
         """
         if not debug_printed:
@@ -490,6 +569,10 @@ def main():
         for i in range(len(best_path_from_source) - 1):
             pygame.draw.line(screen, (255, 0, 0), (best_path_from_source[i].x, best_path_from_source[i].y),
                              (best_path_from_source[i + 1].x, best_path_from_source[i + 1].y), 3)
+            # Draw fixed optimal connections (in orange)
+        for (r1, r2) in fixed_connections:
+            pygame.draw.line(screen, (255, 165, 0), (r1.x, r1.y), (r2.x, r2.y), 2)
+
 
         for i in range(len(best_path_from_demand) - 1):
             pygame.draw.line(screen, (0, 100, 255), (best_path_from_demand[i].x, best_path_from_demand[i].y),
