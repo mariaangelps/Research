@@ -273,60 +273,53 @@ def apply_virtual_forces(robots, obstacles, best_path, connection_distance, opti
             r2.x -= dx * restoring_force * 0.5
             r2.y -= dy * restoring_force * 0.5
 
+# --- ENFORCE CONNECTION CONSTRAINTS ---
+# This runs after computing the forces, but before applying movement.
+# It ensures robots don't break any existing fixed connection due to motion.
+# --- ENFORCE CONNECTION CONSTRAINTS ---
+# Enhanced version that reverts all robots if any connection would break
 
-def is_best_path_valid(best_path, connections):
-    for i in range(len(best_path) - 1):
-        a = best_path[i]
-        b = best_path[i + 1]
-        if not existe_ruta_fisica(a, b, connections):
-            return False
-    return True
+def enforce_connection_constraints(robots, fixed_connections, connection_distance):
+    # Store previous positions for all robots
+    for robot in robots:
+        robot.prev_x, robot.prev_y = robot.x, robot.y
 
-def build_path_by_connections(start, end, connections):
-    visited = set()
-    queue = deque()
-    parent = {}
+    # Track if any constraint is violated
+    any_violation = False
 
-    queue.append(start)
-    visited.add(start)
+    for (r1, r2) in fixed_connections:
+        if not isinstance(r1, Robot) or not isinstance(r2, Robot):
+            continue
 
-    while queue:
-        current = queue.popleft()
-        if current == end:
+        dx = r2.x - r1.x
+        dy = r2.y - r1.y
+        dist = math.hypot(dx, dy)
+
+        if dist > connection_distance:
+            any_violation = True
             break
 
-        for a, b in connections:
-            neighbor = None
-            if a == current and b not in visited:
-                neighbor = b
-            elif b == current and a not in visited:
-                neighbor = a
+    # If any connection would break, revert all robots to previous positions
+    if any_violation:
+        for robot in robots:
+            robot.x, robot.y = robot.prev_x, robot.prev_y
 
-            if neighbor:
-                # ❗ Filtro para ignorar robots cerca de obstáculos
-                if isinstance(neighbor, Robot):
-                    too_close = False
-                    for obs in obstacles:
-                        if distance(neighbor, obs) < CONNECTION_DISTANCE:
-                            too_close = True
-                            break
-                    if too_close:
-                        continue  # Skip this neighbor
 
-                parent[neighbor] = current
-                visited.add(neighbor)
-                queue.append(neighbor)
+def is_best_path_valid(path, connections):
+    """Checks if all consecutive elements in the path are still physically connected."""
+    #print("🔍 Path being validated:", [get_node_name(p) for p in path])
 
-    # reconstruct path
-    path = []
-    if end in parent or start == end:
-        node = end
-        while node != start:
-            path.append(node)
-            node = parent[node]
-        path.append(start)
-        path.reverse()
-    return path
+    for i in range(len(path) - 1):
+        a = path[i]
+        b = path[i + 1]
+        if a == b:
+            continue  # Skip duplicate nodes
+        if (a, b) not in connections and (b, a) not in connections:
+            print(f"⚠️ Broken connection between {get_node_name(a)} and {get_node_name(b)}")
+            print(f"  - Distance: {distance(a, b):.2f}")
+            return False
+
+
 
 
 
@@ -391,9 +384,9 @@ def build_optimal_path(start, end, robots, connections, hop_attr):
     # Conecta to the beginning 
     if isinstance(start, Node):
         first = path[0] if path else None
-        if first and distance(start, first) <= CONNECTION_DISTANCE:
+        if first and first != start and distance(start, first) <= CONNECTION_DISTANCE:
             path.insert(0, start)
-    
+
     return path
 
 
@@ -584,31 +577,51 @@ def main():
 
         # Recalculate path if current one is broken
         if not is_best_path_valid(best_path_from_source, connections):
-            print("⚠️ Path broken — recomputing using real connections.")
-            
-            if obstacles_active:
-                best_path_from_source = build_path_by_connections(source, demand, connections)
-                best_path_from_demand = build_path_by_connections(demand, source, connections)
-            else:
-                best_path_from_source = build_optimal_path(source, demand, robots, connections, 'hop_from_source')
-                best_path_from_demand = build_optimal_path(demand, source, robots, connections, 'hop_from_demand')
+            print("⚠️ Path broken — recomputing using build_optimal_path().")
 
-            # 🔧 Ensure the path starts from Source and ends at Demand (if possible)
+            # Recalculate hop counts first (because robot positions may have changed)
+            propagate_local_hop_count(source, robots, connections, 'hop_from_source', 'parent_from_source')
+            propagate_local_hop_count(demand, robots, connections, 'hop_from_demand', 'parent_from_demand')
+
+            # Rebuild the optimal path dynamically
+            best_path_from_source = build_optimal_path(source, demand, robots, connections, 'hop_from_source')
+            best_path_from_demand = build_optimal_path(demand, source, robots, connections, 'hop_from_demand')
+
+            # Update fixed connection set
+            fixed_connections = set()
+            for i in range(len(best_path_from_source) - 1):
+                a = best_path_from_source[i]
+                b = best_path_from_source[i + 1]
+                if isinstance(a, (Robot, Node)) and isinstance(b, (Robot, Node)):
+                    if isinstance(a, Robot) and isinstance(b, Robot):
+                        pair = (a, b) if a.robot_id < b.robot_id else (b, a)
+                    else:
+                        pair = (a, b)
+                    fixed_connections.add(pair)
+
+            # Ensure the path starts from Source and ends at Demand (if possible)
             if best_path_from_source:
                 first = best_path_from_source[0]
-                if distance(source, first) <= CONNECTION_DISTANCE and (source, first) not in connections and (first, source) not in connections:
+                if first != source and distance(source, first) <= CONNECTION_DISTANCE and (source, first) not in connections and (first, source) not in connections:
                     connect(source, first, connections)
                     best_path_from_source.insert(0, source)
 
                 last = best_path_from_source[-1]
-                if distance(last, demand) <= CONNECTION_DISTANCE and (demand, last) not in connections and (last, demand) not in connections:
+                if last != demand and distance(last, demand) <= CONNECTION_DISTANCE and (demand, last) not in connections and (last, demand) not in connections:
                     connect(demand, last, connections)
                     best_path_from_source.append(demand)
 
+
            
-    
+                # Save previous positions before movement
+        for r in robots:
+            r.prev_x, r.prev_y = r.x, r.y
+
         apply_virtual_forces(robots, obstacles, best_path_from_source, CONNECTION_DISTANCE, fixed_connections)
-       
+        apply_virtual_forces(robots, obstacles, best_path_from_demand, CONNECTION_DISTANCE, fixed_connections)
+
+        enforce_connection_constraints(robots, fixed_connections, CONNECTION_DISTANCE)
+
 
 
         
