@@ -404,6 +404,7 @@ def main():
 
         apply_virtual_forces(robots, obstacles, best_path_from_source, CONNECTION_DISTANCE, source, demand)
         first = best_path_from_source[0] if best_path_from_source else None
+        
         if isinstance(first, Robot) and distance(source, first) > CONNECTION_DISTANCE:
             print("🔁 Rebuilding best path from Source — connection to first robot broken after force update")
             
@@ -425,8 +426,9 @@ def main():
             propagate_local_hop_count(demand, robots, connections, 'hop_from_demand', 'parent_from_demand')
 
             best_path_from_source = build_optimal_path(source, demand, robots, connections, 'hop_from_source')
+            best_path_from_demand = build_optimal_path(demand, source, robots, connections, 'hop_from_demand')
+            
 
-       
 
         """
         #  Debug only once
@@ -509,6 +511,13 @@ def main():
         pygame.display.flip()
 
     pygame.quit()
+    print("\n--- DEBUGGING (AFTER REPULSION - Always) ---")
+    for r in robots:
+        total_hops = None
+        if r.hop_from_source is not None and r.hop_from_demand is not None:
+            total_hops = r.hop_from_source + r.hop_from_demand
+        print(f"Robot {r.robot_id} | SourceHop: {r.hop_from_source} | DemandHop: {r.hop_from_demand} | TotalHop: {total_hops}")
+    print("--------------------------------------------")
 
 if __name__ == "__main__":
     main()
