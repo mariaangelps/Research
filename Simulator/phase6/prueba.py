@@ -154,8 +154,9 @@ def apply_virtual_forces(robots, obstacles, best_path, connection_distance, opti
                     multiplier = 1.5  # normal repulsion
 
                 repel_strength = multiplier * (connection_distance - dist) / connection_distance
-                robot.x += dx * repel_strength
-                robot.y += dy * repel_strength
+                robot.next_x += dx * repel_strength
+                robot.next_y += dy * repel_strength
+
 
 
     # --- 2. Attraction to path neighbors (only robots in best path) ---
@@ -180,8 +181,9 @@ def apply_virtual_forces(robots, obstacles, best_path, connection_distance, opti
                 dx /= dist
                 dy /= dist
                 attraction_strength = 0.5 * (dist - connection_distance) / connection_distance
-                robot.x += dx * attraction_strength
-                robot.y += dy * attraction_strength
+                robot.next_x += dx * attraction_strength
+                robot.next_y += dy * attraction_strength
+
 
             # --- Optional: gentle repulsion if too close ---
             elif dist < connection_distance * 0.5 and dist != 0:
@@ -224,8 +226,9 @@ def apply_virtual_forces(robots, obstacles, best_path, connection_distance, opti
                     dx /= dist
                     dy /= dist
                     pull_strength = 0.3 * (dist / connection_distance)
-                    robot.x += dx * pull_strength
-                    robot.y += dy * pull_strength
+                    robot.next_x += dx * pull_strength
+                    robot.next_y += dy * pull_strength
+
     # --- 4. Restoring force for previously connected robots ---
     # --- 4. Restoring force for previously connected robots ---
     for idx in range(len(best_path) - 1):
@@ -246,10 +249,11 @@ def apply_virtual_forces(robots, obstacles, best_path, connection_distance, opti
                 restoring_strength = 1.0 * strength_factor  # you can bump this up
 
                 # Pull both toward each other
-                r1.x += dx * restoring_strength * 0.5
-                r1.y += dy * restoring_strength * 0.5
-                r2.x -= dx * restoring_strength * 0.5
-                r2.y -= dy * restoring_strength * 0.5
+                r1.next_x += dx * restoring_strength * 0.5
+                r1.next_y += dy * restoring_strength * 0.5
+                r2.next_x -= dx * restoring_strength * 0.5
+                r2.next_y -= dy * restoring_strength * 0.5
+
 
 
     
@@ -266,12 +270,13 @@ def apply_virtual_forces(robots, obstacles, best_path, connection_distance, opti
             dx /= dist
             dy /= dist
 
-            restoring_force = 2.0 * (dist - connection_distance) / connection_distance
+            restoring_force = 3.0 * (dist - connection_distance) / connection_distance
 
-            r1.x += dx * restoring_force * 0.5
-            r1.y += dy * restoring_force * 0.5
-            r2.x -= dx * restoring_force * 0.5
-            r2.y -= dy * restoring_force * 0.5
+            r1.next_x += dx * restoring_force * 0.5
+            r1.next_y += dy * restoring_force * 0.5
+            r2.next_x -= dx * restoring_force * 0.5
+            r2.next_y -= dy * restoring_force * 0.5
+
 
 # --- ENFORCE CONNECTION CONSTRAINTS ---
 # This runs after computing the forces, but before applying movement.
@@ -392,6 +397,20 @@ def build_optimal_path(start, end, robots, connections, hop_attr):
 
 obstacles_active = True  # as soon as virtual forces are used
 
+def validate_future_positions(robots, fixed_connections, connection_distance):
+    for (r1, r2) in fixed_connections:
+        if not isinstance(r1, Robot) or not isinstance(r2, Robot):
+            continue
+
+        dx = r2.next_x - r1.next_x
+        dy = r2.next_y - r1.next_y
+        dist = math.hypot(dx, dy)
+
+        if dist > connection_distance:
+            print(f"❌ Se rompería la conexión entre R{r1.robot_id} y R{r2.robot_id}")
+            return False
+
+    return True
 
 
 
@@ -616,6 +635,7 @@ def main():
                 # Save previous positions before movement
         for r in robots:
             r.prev_x, r.prev_y = r.x, r.y
+            r.next_x, r.next_y = r.x, r.y 
 
         apply_virtual_forces(robots, obstacles, best_path_from_source, CONNECTION_DISTANCE, fixed_connections)
         apply_virtual_forces(robots, obstacles, best_path_from_demand, CONNECTION_DISTANCE, fixed_connections)
@@ -639,7 +659,7 @@ def main():
         propagate_local_hop_count(source, robots, connections, 'hop_from_source', 'parent_from_source')
         propagate_local_hop_count(demand, robots, connections, 'hop_from_demand', 'parent_from_demand')
 
-        # 🔁 Reconstruir caminos después del movimiento
+        # Reconstruir caminos después del movimiento
         best_path_from_source = build_optimal_path(source, demand, robots, connections, 'hop_from_source')
         best_path_from_demand = build_optimal_path(demand, source, robots, connections, 'hop_from_demand')
 
@@ -654,6 +674,31 @@ def main():
                 else:
                     pair = (a, b)
                 fixed_connections.add(pair)
+
+        if validate_future_positions(robots, fixed_connections, CONNECTION_DISTANCE):
+            for r in robots:
+                r.x, r.y = r.next_x, r.next_y
+        else:
+            print("⛔ Movimiento cancelado: se rompería una conexión fija.")
+            for r in robots:
+                r.next_x, r.next_y = r.x, r.y  # Revertimos propuesta
+                propagate_local_hop_count(source, robots, connections, 'hop_from_source', 'parent_from_source')
+                propagate_local_hop_count(demand, robots, connections, 'hop_from_demand', 'parent_from_demand')
+
+                best_path_from_source = build_optimal_path(source, demand, robots, connections, 'hop_from_source')
+                best_path_from_demand = build_optimal_path(demand, source, robots, connections, 'hop_from_demand')
+
+                fixed_connections = set()
+                for i in range(len(best_path_from_source) - 1):
+                    a = best_path_from_source[i]
+                    b = best_path_from_source[i + 1]
+                    if isinstance(a, (Robot, Node)) and isinstance(b, (Robot, Node)):
+                        if isinstance(a, Robot) and isinstance(b, Robot):
+                            pair = (a, b) if a.robot_id < b.robot_id else (b, a)
+                        else:
+                            pair = (a, b)
+                        fixed_connections.add(pair)
+
 
 
 
