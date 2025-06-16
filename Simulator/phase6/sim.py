@@ -134,8 +134,16 @@ def existe_ruta_fisica(a, b, conexiones_fisicas):
 def get_node_name(n):
     return n.name if isinstance(n, Node) else f"Robot {n.robot_id}"
 
+def is_in_obstacle_range(robot, obstacles, danger_radius):
+    for obs in obstacles:
+        dist = math.hypot(robot.x - obs.x, robot.y - obs.y)
+        if dist < danger_radius:
+            return True
+    return False
 
-def apply_virtual_forces(robots, obstacles, best_path, connection_distance, source, demand):
+def apply_virtual_forces(robots, obstacles, best_path, connection_distance, source, demand, connections):
+
+
     # 1. Repulsión de obstáculos
     for robot in robots:
         for obstacle in obstacles:
@@ -145,12 +153,15 @@ def apply_virtual_forces(robots, obstacles, best_path, connection_distance, sour
             if dist < connection_distance and dist != 0:
                 dx /= dist
                 dy /= dist
-                repel_strength = 1.5 * (connection_distance - dist) / connection_distance
-                robot.x += dx * repel_strength
-                robot.y += dy * repel_strength
+                repel_strength = 2 * (connection_distance - dist) / connection_distance
+                new_dx = dx * repel_strength
+                new_dy = dy * repel_strength
+                if is_move_valid(robot, new_dx, new_dy, connections):
+                    robot.x += new_dx
+                    robot.y += new_dy
 
     # 2. Fuerza virtual tipo resorte entre vecinos del golden path (aplica siempre)
-    desired_distance = connection_distance * 0.6
+    desired_distance = connection_distance * 0.9
     spring_strength = 0.2
 
     for idx, robot in enumerate(best_path):
@@ -209,6 +220,17 @@ def apply_virtual_forces(robots, obstacles, best_path, connection_distance, sour
                 last.x += dx * force
                 last.y += dy * force
 
+def is_move_valid(robot, dx, dy, connections):
+    new_x = robot.x + dx
+    new_y = robot.y + dy
+
+    for a, b in connections:
+        if a == robot or b == robot:
+            other = b if a == robot else a
+            dist = math.hypot(other.x - new_x, other.y - new_y)
+            if dist > CONNECTION_DISTANCE:
+                return False
+    return True
 
 
 
@@ -237,6 +259,8 @@ def build_optimal_path(start, end, robots, connections, hop_attr):
             if r in visited:
                 continue
             if getattr(r, hop_attr) == current_hop + 1:
+                if is_in_obstacle_range(r, obstacles, CONNECTION_DISTANCE):
+                    continue 
                 # check its directly connected 
                 if existe_ruta_fisica(current, r, connections):
                     # Total hop = source + demand
@@ -252,6 +276,7 @@ def build_optimal_path(start, end, robots, connections, hop_attr):
                     total_hop = source_hop + demand_hop
 
                     candidates.append((total_hop, r))
+
 
         if not candidates:
             break
@@ -313,7 +338,9 @@ def main():
         for i in range(len(robots)):
             for j in range(i + 1, len(robots)):
                 if distance(robots[i], robots[j]) <= CONNECTION_DISTANCE:
-                    connect(robots[i], robots[j], connections)
+                    if not is_in_obstacle_range(robots[i], obstacles, CONNECTION_DISTANCE) and not is_in_obstacle_range(robots[j], obstacles, CONNECTION_DISTANCE):
+                        connect(robots[i], robots[j], connections)
+
 
 
         
@@ -402,7 +429,8 @@ def main():
             obstacle.draw(screen)
             pygame.draw.circle(screen, (255, 200, 200), (int(obstacle.x), int(obstacle.y)), CONNECTION_DISTANCE, 1)
 
-        apply_virtual_forces(robots, obstacles, best_path_from_source, CONNECTION_DISTANCE, source, demand)
+        apply_virtual_forces(robots, obstacles, best_path_from_source, CONNECTION_DISTANCE, source, demand, connections)
+
         first = best_path_from_source[0] if best_path_from_source else None
         
         if isinstance(first, Robot) and distance(source, first) > CONNECTION_DISTANCE:
@@ -502,7 +530,9 @@ def main():
         """
         
         for robot in robots:
-            if robot in robots_in_path:
+            if is_in_obstacle_range(robot, obstacles, CONNECTION_DISTANCE):
+                robot.draw(screen, color=(180, 80, 0))  # naranja para peligro
+            elif robot in robots_in_path:
                 robot.draw(screen, color=(0, 200, 0))  # green
             else:
                 robot.draw(screen, color=(0, 100, 255))  # blue
