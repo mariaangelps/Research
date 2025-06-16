@@ -7,7 +7,7 @@ from class_source_and_demand import Source, Demand
 from class_obs import Obstacle
 
 ARENA_WIDTH, ARENA_HEIGHT = 1000, 600
-ROBOT_RADIUS = 10
+ROBOT_RADIUS = 4
 N_ROBOTS = 40
 #N_EXTRA_ROBOTS = 10
 CONNECTION_DISTANCE = 120
@@ -42,7 +42,7 @@ def connect(a, b, connections):
     if (a, b) not in connections and (b, a) not in connections:
         connections.append((a, b))
 
-def propagate_local_hop_count(source, robots, connections, attr_hop, attr_parent):
+def propagate_local_hop_count(source, robots, connections, attr_hop, attr_parent, obstacles):
     #print(f"\nStarting local token-passing from: {source.name}")
     for robot in robots:
         setattr(robot, attr_hop, None)
@@ -63,7 +63,8 @@ def propagate_local_hop_count(source, robots, connections, attr_hop, attr_parent
 
     while queue:
         current, hops, parent = queue.pop(0)
-
+        if isinstance(current, Robot) and is_in_obstacle_range(current, obstacles, CONNECTION_DISTANCE):
+            continue
         if isinstance(current, Robot):
             existing_hop = getattr(current, attr_hop)
 
@@ -135,11 +136,13 @@ def get_node_name(n):
     return n.name if isinstance(n, Node) else f"Robot {n.robot_id}"
 
 def is_in_obstacle_range(robot, obstacles, danger_radius):
+    ALLOW_MARGIN = 0.98  # puedes ajustar a 0.97 si quieres menos permisivo
     for obs in obstacles:
         dist = math.hypot(robot.x - obs.x, robot.y - obs.y)
-        if dist < danger_radius:
+        if dist < danger_radius * ALLOW_MARGIN:
             return True
     return False
+
 
 def apply_virtual_forces(robots, obstacles, best_path, connection_distance, source, demand, connections):
 
@@ -153,7 +156,7 @@ def apply_virtual_forces(robots, obstacles, best_path, connection_distance, sour
             if dist < connection_distance and dist != 0:
                 dx /= dist
                 dy /= dist
-                repel_strength = 2 * (connection_distance - dist) / connection_distance
+                repel_strength = 1.5 * (connection_distance - dist) / connection_distance
                 new_dx = dx * repel_strength
                 new_dy = dy * repel_strength
                 if is_move_valid(robot, new_dx, new_dy, connections):
@@ -235,7 +238,7 @@ def is_move_valid(robot, dx, dy, connections):
 
 
 
-def build_optimal_path(start, end, robots, connections, hop_attr):
+def build_optimal_path(start, end, robots, connections, hop_attr, obstacles):
     path = []
     visited = set()
     current = start
@@ -259,10 +262,11 @@ def build_optimal_path(start, end, robots, connections, hop_attr):
             if r in visited:
                 continue
             if getattr(r, hop_attr) == current_hop + 1:
-                if is_in_obstacle_range(r, obstacles, CONNECTION_DISTANCE):
-                    continue 
+                
                 # check its directly connected 
                 if existe_ruta_fisica(current, r, connections):
+                    if is_in_obstacle_range(r, obstacles, CONNECTION_DISTANCE):
+                        continue 
                     # Total hop = source + demand
                     source_hop = getattr(r, 'hop_from_source')
                     demand_hop = getattr(r, 'hop_from_demand')
@@ -279,10 +283,34 @@ def build_optimal_path(start, end, robots, connections, hop_attr):
 
 
         if not candidates:
-            break
+            for r in robots:
+                if r in visited:
+                    continue
+                if getattr(r, hop_attr) == current_hop + 2:
+                    if existe_ruta_fisica(current, r, connections):
+                        if is_in_obstacle_range(r, obstacles, CONNECTION_DISTANCE):
+                            continue
+                        source_hop = getattr(r, 'hop_from_source') or float('inf')
+                        demand_hop = getattr(r, 'hop_from_demand') or float('inf')
+                        total_hop = source_hop + demand_hop
+                        candidates.append((total_hop, r))
+
+        if not candidates:
+            break  
+
 
         #  choose robot with least total hop count
-        _, best_next = min(candidates, key=lambda x: x[0])
+        #best_next = min(candidates, key=lambda x: x[0])
+        found_valid = False
+        for _, candidate in sorted(candidates, key=lambda x: x[0]):
+            if not is_in_obstacle_range(candidate, obstacles, CONNECTION_DISTANCE):
+                best_next = candidate
+                found_valid = True
+                break
+
+        if not found_valid:
+            print(f"❌ ALL CANDIDATES IN DANGER FROM: {get_node_name(current)} — path terminated.")
+            break
 
         path.append(best_next)
         visited.add(best_next)
@@ -382,8 +410,9 @@ def main():
     print(f"Demand can directly connect to robots: {direct_from_demand}")
 
 
-    propagate_local_hop_count(source, robots, connections, 'hop_from_source', 'parent_from_source')
-    propagate_local_hop_count(demand, robots, connections, 'hop_from_demand', 'parent_from_demand')
+    propagate_local_hop_count(source, robots, connections, 'hop_from_source', 'parent_from_source', obstacles)
+    propagate_local_hop_count(demand, robots, connections, 'hop_from_demand', 'parent_from_demand', obstacles)
+
 
     print("\n--- DEBUGGING ---")
     for r in robots:
@@ -393,9 +422,9 @@ def main():
         print(f"Robot {r.robot_id} | SourceHop: {r.hop_from_source} | DemandHop: {r.hop_from_demand} | TotalHop: {total_hops}")
     print("------------------")
 
-    best_path_from_source = build_optimal_path(source, demand, robots, connections, 'hop_from_source')
-    best_path_from_demand = build_optimal_path(demand, source, robots, connections, 'hop_from_demand') 
-    
+    best_path_from_source = build_optimal_path(source, demand, robots, connections, 'hop_from_source', obstacles)
+    best_path_from_demand = build_optimal_path(demand, source, robots, connections, 'hop_from_demand', obstacles)
+
     #debugging
     """
     print("\n Verificando conexión física del camino Source ➔ Demand:")
@@ -450,12 +479,13 @@ def main():
                     connect(robot, demand, connections)
 
             # Volver a propagar hops y reconstruir el path
-            propagate_local_hop_count(source, robots, connections, 'hop_from_source', 'parent_from_source')
-            propagate_local_hop_count(demand, robots, connections, 'hop_from_demand', 'parent_from_demand')
+            propagate_local_hop_count(source, robots, connections, 'hop_from_source', 'parent_from_source', obstacles)
+            propagate_local_hop_count(demand, robots, connections, 'hop_from_demand', 'parent_from_demand', obstacles)
 
-            best_path_from_source = build_optimal_path(source, demand, robots, connections, 'hop_from_source')
-            best_path_from_demand = build_optimal_path(demand, source, robots, connections, 'hop_from_demand')
-            
+
+            best_path_from_source = build_optimal_path(source, demand, robots, connections, 'hop_from_source', obstacles)
+            best_path_from_demand = build_optimal_path(demand, source, robots, connections, 'hop_from_demand', obstacles)
+
 
 
         """
@@ -512,7 +542,7 @@ def main():
 
         for i in range(len(best_path_from_source) - 1):
             pygame.draw.line(screen, (255, 0, 0), (best_path_from_source[i].x, best_path_from_source[i].y),
-                             (best_path_from_source[i + 1].x, best_path_from_source[i + 1].y), 3)
+                             (best_path_from_source[i + 1].x, best_path_from_source[i + 1].y), 2)
 
         for i in range(len(best_path_from_demand) - 1):
             pygame.draw.line(screen, (0, 100, 255), (best_path_from_demand[i].x, best_path_from_demand[i].y),
@@ -530,8 +560,10 @@ def main():
         """
         
         for robot in robots:
+            
             if is_in_obstacle_range(robot, obstacles, CONNECTION_DISTANCE):
                 robot.draw(screen, color=(180, 80, 0))  # naranja para peligro
+            
             elif robot in robots_in_path:
                 robot.draw(screen, color=(0, 200, 0))  # green
             else:
