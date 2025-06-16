@@ -262,11 +262,11 @@ def apply_virtual_forces(robots, obstacles, best_path, connection_distance, opti
         dy = r2.y - r1.y
         dist = math.hypot(dx, dy)
 
-        if dist > 0.8 * connection_distance:  # even if still "connected", keep them close
+        if dist > 0.9 * connection_distance:  # even if still "connected", keep them close
             dx /= dist
             dy /= dist
 
-            restoring_force = 1.5 * (dist - connection_distance) / connection_distance
+            restoring_force = 2.0 * (dist - connection_distance) / connection_distance
 
             r1.x += dx * restoring_force * 0.5
             r1.y += dy * restoring_force * 0.5
@@ -621,6 +621,39 @@ def main():
         apply_virtual_forces(robots, obstacles, best_path_from_demand, CONNECTION_DISTANCE, fixed_connections)
 
         enforce_connection_constraints(robots, fixed_connections, CONNECTION_DISTANCE)
+        
+        # Recalcular conexiones después de movimiento
+        connections = []
+        for i in range(len(robots)):
+            for j in range(i + 1, len(robots)):
+                if distance(robots[i], robots[j]) <= CONNECTION_DISTANCE:
+                    connect(robots[i], robots[j], connections)
+
+        for robot in robots:
+            if distance(robot, source) <= CONNECTION_DISTANCE:
+                connect(robot, source, connections)
+            if distance(robot, demand) <= CONNECTION_DISTANCE:
+                connect(robot, demand, connections)
+
+        # Propagar hop counts de nuevo
+        propagate_local_hop_count(source, robots, connections, 'hop_from_source', 'parent_from_source')
+        propagate_local_hop_count(demand, robots, connections, 'hop_from_demand', 'parent_from_demand')
+
+        # 🔁 Reconstruir caminos después del movimiento
+        best_path_from_source = build_optimal_path(source, demand, robots, connections, 'hop_from_source')
+        best_path_from_demand = build_optimal_path(demand, source, robots, connections, 'hop_from_demand')
+
+        # Actualizar conexiones fijas
+        fixed_connections = set()
+        for i in range(len(best_path_from_source) - 1):
+            a = best_path_from_source[i]
+            b = best_path_from_source[i + 1]
+            if isinstance(a, (Robot, Node)) and isinstance(b, (Robot, Node)):
+                if isinstance(a, Robot) and isinstance(b, Robot):
+                    pair = (a, b) if a.robot_id < b.robot_id else (b, a)
+                else:
+                    pair = (a, b)
+                fixed_connections.add(pair)
 
 
 
