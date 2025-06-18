@@ -209,6 +209,7 @@ def build_path_after_repulsion(start, end, robots, connections, hop_attr):
 
     while current != end:
         visited.add(current)
+
         if isinstance(end, Node) and distance(current, end) <= CONNECTION_DISTANCE:
             if not path or path[-1] != current:
                 path.append(current)
@@ -217,24 +218,28 @@ def build_path_after_repulsion(start, end, robots, connections, hop_attr):
 
         candidates = []
 
-        for r in robots:
+        # Buscar solo vecinos directos de current
+        neighbors = [
+            r2 for (r1, r2) in connections if r1 == current and isinstance(r2, Robot)
+        ] + [
+            r1 for (r1, r2) in connections if r2 == current and isinstance(r1, Robot)
+        ]
+
+        for r in neighbors:
             if r in visited:
                 continue
             if getattr(r, hop_attr) == current_hop + 1:
-                if existe_ruta_fisica(current, r, connections):
-                    source_hop = getattr(r, 'hop_from_source') or float('inf')
-                    demand_hop = getattr(r, 'hop_from_demand') or float('inf')
-                    total_hop = source_hop + demand_hop
-
-                    candidates.append((total_hop, r))
+                source_hop = getattr(r, 'hop_from_source') or float('inf')
+                demand_hop = getattr(r, 'hop_from_demand') or float('inf')
+                total_hop = source_hop + demand_hop
+                candidates.append((total_hop, r))
 
         if not candidates:
             break
 
-        # Aquí podrías agregar desempate personalizado si hay dos con el mismo total_hop
-        #candidates.sort(key=lambda x: (x[0], x[1].robot_id))  # menor total_hop, y menor id como desempate
-
+        candidates.sort(key=lambda x: (x[0], x[1].robot_id))
         best_next = candidates[0][1]
+
         path.append(best_next)
         visited.add(best_next)
         current = best_next
@@ -246,7 +251,6 @@ def build_path_after_repulsion(start, end, robots, connections, hop_attr):
             path.insert(0, start)
 
     return path
-
 
 
 
