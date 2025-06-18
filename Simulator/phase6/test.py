@@ -19,11 +19,9 @@ for _ in range(3):
     obstacles.append(Obstacle(x, y))
 
 
-
-
 #with obstacles 
 class Node:
-    def __init__(self, name, x, y, color):
+    def __init__(self, name, x, y, color):  # Fixed: was _init_
         self.name = name
         self.x = x
         self.y = y
@@ -132,11 +130,12 @@ def existe_ruta_fisica(a, b, conexiones_fisicas):
                 cola.append(vecino)
 
     return False
+
 def get_node_name(n):
     return n.name if isinstance(n, Node) else f"Robot {n.robot_id}"
 
 def is_in_obstacle_range(robot, obstacles, danger_radius):
-    ALLOW_MARGIN = 0.98  # puedes ajustar a 0.97 si quieres menos permisivo
+    ALLOW_MARGIN = 0.99  # puedes ajustar a 0.97 si quieres menos permisivo
     for obs in obstacles:
         dist = math.hypot(robot.x - obs.x, robot.y - obs.y)
         if dist < danger_radius * ALLOW_MARGIN:
@@ -145,7 +144,6 @@ def is_in_obstacle_range(robot, obstacles, danger_radius):
 
 
 def apply_virtual_forces(robots, obstacles, best_path, connection_distance, source, demand, connections):
-
 
     # 1. Repulsión de obstáculos
     for robot in robots:
@@ -236,8 +234,7 @@ def is_move_valid(robot, dx, dy, connections):
     return True
 
 
-
-
+# UNCHANGED build_optimal_path function from the first code
 def build_optimal_path(start, end, robots, connections, hop_attr):
     path = []
     visited = set()
@@ -296,14 +293,6 @@ def build_optimal_path(start, end, robots, connections, hop_attr):
             path.insert(0, start)
     
     return path
-
-
-
-
-
-
-
-
 
 
 def main():
@@ -488,8 +477,6 @@ def main():
             """
 
 
-
-
         """
         print("\n Network updated after repulsion:")
         print("Connections re-evaluated based on new positions.")
@@ -549,5 +536,5 @@ def main():
         print(f"Robot {r.robot_id} | SourceHop: {r.hop_from_source} | DemandHop: {r.hop_from_demand} | TotalHop: {total_hops}")
     print("--------------------------------------------")
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # Fixed: was _name_
     main()

@@ -407,7 +407,7 @@ def validate_future_positions(robots, fixed_connections, connection_distance):
         dist = math.hypot(dx, dy)
 
         if dist > connection_distance:
-            print(f"❌ Se rompería la conexión entre R{r1.robot_id} y R{r2.robot_id}")
+            #ía la conexión entre R{r1.robot_id} y R{r2.robot_id}")
             return False
 
     return True
@@ -679,7 +679,7 @@ def main():
             for r in robots:
                 r.x, r.y = r.next_x, r.next_y
         else:
-            print("⛔ Movimiento cancelado: se rompería una conexión fija.")
+            #print("⛔ Movimiento cancelado: se rompería una conexión fija.")
             for r in robots:
                 r.next_x, r.next_y = r.x, r.y  # Revertimos propuesta
                 propagate_local_hop_count(source, robots, connections, 'hop_from_source', 'parent_from_source')
@@ -783,10 +783,10 @@ def main():
         
         # Range visually detected
         
-        """
+        
         for robot in robots:
             pygame.draw.circle(screen, (180, 180, 180), (int(robot.x), int(robot.y)), CONNECTION_DISTANCE, 1)
-        """
+        
         
         for robot in robots:
             if robot in robots_in_path:
