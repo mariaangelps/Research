@@ -13,7 +13,7 @@ N_ROBOTS = 40
 CONNECTION_DISTANCE = 120
 # Example: create 3 random obstacles
 obstacles = []
-for _ in range(3):
+for _ in range(1):
     x = random.randint(150, ARENA_WIDTH - 150)
     y = random.randint(100, ARENA_HEIGHT - 100)
     obstacles.append(Obstacle(x, y))
@@ -362,6 +362,50 @@ def main():
     print([get_node_name(r) for r in best_path_from_demand])
 
     debug_printed=False #for repulsion
+    # Draw initial scene BEFORE repulsion
+    screen.fill((255, 255, 255))
+    source.draw(screen)
+    demand.draw(screen)
+
+    # Draw obstacles and connection range
+    for obstacle in obstacles:
+        obstacle.draw(screen)
+        pygame.draw.circle(screen, (255, 200, 200), (int(obstacle.x), int(obstacle.y)), CONNECTION_DISTANCE, 1)
+
+    # Draw all connections
+    for a, b in connections:
+        pygame.draw.line(screen, (210, 210, 210), (a.x, a.y), (b.x, b.y), 1)
+
+    # Draw path from source
+    for i in range(len(best_path_from_source) - 1):
+        pygame.draw.line(screen, (255, 0, 0), (best_path_from_source[i].x, best_path_from_source[i].y),
+                        (best_path_from_source[i + 1].x, best_path_from_source[i + 1].y), 3)
+
+    # Draw path from demand
+    for i in range(len(best_path_from_demand) - 1):
+        pygame.draw.line(screen, (0, 100, 255), (best_path_from_demand[i].x, best_path_from_demand[i].y),
+                        (best_path_from_demand[i + 1].x, best_path_from_demand[i + 1].y), 3)
+
+    # Draw robots
+    robots_in_path = {r for r in best_path_from_source if isinstance(r, Robot)}
+    for robot in robots:
+        if robot in robots_in_path:
+            robot.draw(screen, color=(0, 200, 0))  # green
+        else:
+            robot.draw(screen, color=(0, 100, 255))  # blue
+
+    pygame.display.flip()
+
+    # WAIT FOR KEY PRESS BEFORE CONTINUING
+    waiting = True
+    print("\nPress any key to continue and apply REPULSION...\n")
+    while waiting:
+        for event in pygame.event.get():
+            if event.type == pygame.KEYDOWN:
+                waiting = False
+            elif event.type == pygame.QUIT:
+                pygame.quit()
+                return
 
     running = True
     while running:
@@ -383,13 +427,15 @@ def main():
                     dy = robot.y - obstacle.y
                     dist = math.hypot(dx, dy)
                     if dist < 120:
-                        if dist != 0:
+                        """if dist != 0:
                             dx /= dist
                             dy /= dist
-                        repel_strength = 1.5 * (120 - dist) / 120
+                        """
+                        repel_strength = 1*(120-dist)
                         # Store original position
                         original_x, original_y = robot.x, robot.y
-
+                        #repel vector
+                        rvector= (dx, dy)
                         # Tentatively move
                         robot.x += dx * repel_strength
                         robot.y += dy * repel_strength

@@ -413,7 +413,50 @@ def main():
     print([get_node_name(r) for r in best_path_from_demand])
 
     debug_printed=False #for repulsion
+    # Draw initial scene BEFORE repulsion
+    screen.fill((255, 255, 255))
+    source.draw(screen)
+    demand.draw(screen)
 
+    # Draw obstacles and connection range
+    for obstacle in obstacles:
+        obstacle.draw(screen)
+        pygame.draw.circle(screen, (255, 200, 200), (int(obstacle.x), int(obstacle.y)), CONNECTION_DISTANCE, 1)
+
+    # Draw all connections
+    for a, b in connections:
+        pygame.draw.line(screen, (210, 210, 210), (a.x, a.y), (b.x, b.y), 1)
+
+    # Draw path from source
+    for i in range(len(best_path_from_source) - 1):
+        pygame.draw.line(screen, (255, 0, 0), (best_path_from_source[i].x, best_path_from_source[i].y),
+                        (best_path_from_source[i + 1].x, best_path_from_source[i + 1].y), 3)
+
+    # Draw path from demand
+    for i in range(len(best_path_from_demand) - 1):
+        pygame.draw.line(screen, (0, 100, 255), (best_path_from_demand[i].x, best_path_from_demand[i].y),
+                        (best_path_from_demand[i + 1].x, best_path_from_demand[i + 1].y), 3)
+
+    # Draw robots
+    robots_in_path = {r for r in best_path_from_source if isinstance(r, Robot)}
+    for robot in robots:
+        if robot in robots_in_path:
+            robot.draw(screen, color=(0, 200, 0))  # green
+        else:
+            robot.draw(screen, color=(0, 100, 255))  # blue
+
+    pygame.display.flip()
+
+    # WAIT FOR KEY PRESS BEFORE CONTINUING
+    waiting = True
+    print("\nPress any key to continue and apply REPULSION...\n")
+    while waiting:
+        for event in pygame.event.get():
+            if event.type == pygame.KEYDOWN:
+                waiting = False
+            elif event.type == pygame.QUIT:
+                pygame.quit()
+                return
     running = True
     while running:
         screen.fill((255, 255, 255))
@@ -431,7 +474,7 @@ def main():
         first = best_path_from_source[0] if best_path_from_source else None
         
         if isinstance(first, Robot) and distance(source, first) > CONNECTION_DISTANCE:
-            print("🔁 Rebuilding best path from Source — connection to first robot broken after force update")
+            print("Rebuilding best path from Source — connection to first robot broken after force update")
             
             # Recalcular conexiones físicas después del movimiento
             connections = []
