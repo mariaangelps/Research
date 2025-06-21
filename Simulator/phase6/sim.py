@@ -134,7 +134,7 @@ def get_node_name(n):
     return n.name if isinstance(n, Node) else f"Robot {n.robot_id}"
 
 def is_in_obstacle_range(robot, obstacles, danger_radius):
-    ALLOW_MARGIN = 0.98  # puedes ajustar a 0.97 si quieres menos permisivo
+    ALLOW_MARGIN = 0.97  # puedes ajustar a 0.97 si quieres menos permisivo
     for obs in obstacles:
         dist = math.hypot(robot.x - obs.x, robot.y - obs.y)
         if dist < danger_radius * ALLOW_MARGIN:

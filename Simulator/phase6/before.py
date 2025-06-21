@@ -6,14 +6,14 @@ from class_robot import Robot
 from class_source_and_demand import Source, Demand
 from class_obs import Obstacle
 
-ARENA_WIDTH, ARENA_HEIGHT = 700, 400
+ARENA_WIDTH, ARENA_HEIGHT = 700, 300
 ROBOT_RADIUS = 7
 N_ROBOTS = 5
 #N_EXTRA_ROBOTS = 10
 CONNECTION_DISTANCE = 120
 # Example: create 3 random obstacles
 obstacles = []
-for _ in range(1):
+for _ in range(2):
     x = random.randint(150, ARENA_WIDTH - 150)
     y = random.randint(100, ARENA_HEIGHT - 100)
     obstacles.append(Obstacle(x, y))
@@ -133,7 +133,13 @@ def existe_ruta_fisica(a, b, conexiones_fisicas):
     return False
 def get_node_name(n):
     return n.name if isinstance(n, Node) else f"Robot {n.robot_id}"
-
+def is_in_obstacle_range(robot, obstacles, danger_radius):
+    ALLOW_MARGIN = 0.98  
+    for obs in obstacles:
+        dist = math.hypot(robot.x - obs.x, robot.y - obs.y)
+        if dist < danger_radius * ALLOW_MARGIN:
+            return True
+    return False
 def apply_virtual_forces(robots, obstacles, best_path, connection_distance, optimal_path_links):
 
 
@@ -273,7 +279,7 @@ def apply_virtual_forces(robots, obstacles, best_path, connection_distance, opti
 # It ensures robots don't break any existing fixed connection due to motion.
 # --- ENFORCE CONNECTION CONSTRAINTS ---
 # Enhanced version that reverts all robots if any connection would break
-
+"""
 def enforce_connection_constraints(robots, fixed_connections, connection_distance):
     # Store previous positions for all robots
     for robot in robots:
@@ -299,7 +305,7 @@ def enforce_connection_constraints(robots, fixed_connections, connection_distanc
         for robot in robots:
             robot.x, robot.y = robot.prev_x, robot.prev_y
 
-
+"""
 def is_best_path_valid(path, connections):
     """Checks if all consecutive elements in the path are still physically connected."""
     #print("🔍 Path being validated:", [get_node_name(p) for p in path])
@@ -469,7 +475,8 @@ def main():
         for i in range(len(robots)):
             for j in range(i + 1, len(robots)):
                 if distance(robots[i], robots[j]) <= CONNECTION_DISTANCE:
-                    connect(robots[i], robots[j], connections)
+                    if not is_in_obstacle_range(robots[i], obstacles, CONNECTION_DISTANCE) and not is_in_obstacle_range(robots[j], obstacles, CONNECTION_DISTANCE):
+                        connect(robots[i], robots[j], connections)
 
 
         
@@ -614,10 +621,14 @@ def main():
     # Draw robots
     robots_in_path = {r for r in best_path_from_source if isinstance(r, Robot)}
     for robot in robots:
-        if robot in robots_in_path:
+        if is_in_obstacle_range(robot, obstacles, CONNECTION_DISTANCE):
+            robot.draw(screen, color=(180, 80, 0))  # naranja para peligro
+            
+        elif robot in robots_in_path:
             robot.draw(screen, color=(0, 200, 0))  # green
         else:
             robot.draw(screen, color=(0, 100, 255))  # blue
+        
 
     pygame.display.flip()
 
@@ -644,7 +655,7 @@ def main():
             pygame.draw.circle(screen, (255, 200, 200), (int(obstacle.x), int(obstacle.y)), CONNECTION_DISTANCE, 1)
 
             apply_virtual_forces(robots, obstacles, best_path_from_source, CONNECTION_DISTANCE, fixed_connections)
-            enforce_connection_constraints(robots, fixed_connections, CONNECTION_DISTANCE)
+            #enforce_connection_constraints(robots, fixed_connections, CONNECTION_DISTANCE)
             
             # Apply repulsion
             for robot in robots:
@@ -749,58 +760,7 @@ def main():
 
         
 
-        """
-        if not debug_printed:
-            print("\n--- DEBUGGING: Robots in range ---")
-            for robot in robots:
-                in_range = []
-                for other in robots:
-                    if robot != other and distance(robot, other) <= CONNECTION_DISTANCE:
-                        in_range.append(other.robot_id)
-                if in_range:
-                    print(f" Robot {robot.robot_id} can directly connect to robots: {in_range}")
-                else:
-                    print(f" Robot {robot.robot_id} is isolated — no robots in range")
-
-            print("\n--- DEBUGGING: Source direct connections ---")
-            direct_from_source = [r.robot_id for r in robots if distance(source, r) <= CONNECTION_DISTANCE]
-            print(f"Source can directly connect to robots after repulsion: {direct_from_source}")
-
-            print("\n--- DEBUGGING: Demand direct connections ---")
-            direct_from_demand = [r.robot_id for r in robots if distance(demand, r) <= CONNECTION_DISTANCE]
-            print(f"Demand can directly connect to robots after repulsion: {direct_from_demand}")
-
-            print("\n--- UPDATED AFTER REPULSION & COHESION ---")
-            for r in robots:
-                total_hops = (
-                    r.hop_from_source + r.hop_from_demand
-                    if r.hop_from_source is not None and r.hop_from_demand is not None
-                    else None
-                )
-                print(f"Robot {r.robot_id} | SourceHop: {r.hop_from_source} | DemandHop: {r.hop_from_demand} | TotalHop: {total_hops}")
-
-            print("\n>>> Best Path Source ➔ Demand (After Repulsion & Cohesion):")
-            print([get_node_name(r) for r in best_path_from_source])
-            print("\n>>> Best Path Demand ➔ Source (After Repulsion & Cohesion):")
-            print([get_node_name(r) for r in best_path_from_demand])
-
-            debug_printed = True
-
-            """
-
-
-
-        """
-        print("\n Network updated after repulsion:")
-        print("Connections re-evaluated based on new positions.")
-        print("Hop counts re-propagated from Source and Demand.")
-        print("Optimal paths recomputed.")
-        print("Current best path Source ➔ Demand:")
-        print([get_node_name(r) for r in best_path_from_source])
-        print("Current best path Demand ➔ Source:")
-        print([get_node_name(r) for r in best_path_from_demand])
-
-        """
+        
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
@@ -828,10 +788,10 @@ def main():
         
         # Range visually detected
         
-        """
+        
         for robot in robots:
             pygame.draw.circle(screen, (180, 180, 180), (int(robot.x), int(robot.y)), CONNECTION_DISTANCE, 1)
-        """
+        
         
         for robot in robots:
             if robot in robots_in_path:
