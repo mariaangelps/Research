@@ -42,7 +42,7 @@ def connect(a, b, connections):
     if (a, b) not in connections and (b, a) not in connections:
         connections.append((a, b))
 
-def propagate_local_hop_count(source, robots, connections, attr_hop, attr_parent, obstacles):
+def propagate_local_hop_count(source, robots, connections, attr_hop, attr_parent):
     #print(f"\nStarting local token-passing from: {source.name}")
     for robot in robots:
         setattr(robot, attr_hop, None)
@@ -63,8 +63,7 @@ def propagate_local_hop_count(source, robots, connections, attr_hop, attr_parent
 
     while queue:
         current, hops, parent = queue.pop(0)
-        if isinstance(current, Robot) and is_in_obstacle_range(current, obstacles, CONNECTION_DISTANCE):
-            continue
+
         if isinstance(current, Robot):
             existing_hop = getattr(current, attr_hop)
 
@@ -104,7 +103,6 @@ def is_path_exists(source, demand, robots, connections):
             if neighbor and neighbor not in visited:
                 queue.append(neighbor)
     return False
-
 #function to verify if there is a direct path 
 def existe_ruta_fisica(a, b, conexiones_fisicas):
     visitado = set()
@@ -377,9 +375,8 @@ def main():
             direct_from_demand.append(robot.robot_id)
     print(f"Demand can directly connect to robots: {direct_from_demand}")
 
-
-    propagate_local_hop_count(source, robots, connections, 'hop_from_source', 'parent_from_source', obstacles)
-    propagate_local_hop_count(demand, robots, connections, 'hop_from_demand', 'parent_from_demand', obstacles)
+    propagate_local_hop_count(source, robots, connections, 'hop_from_source', 'parent_from_source')
+    propagate_local_hop_count(demand, robots, connections, 'hop_from_demand', 'parent_from_demand')
 
 
     print("\n--- DEBUGGING ---")
@@ -411,6 +408,8 @@ def main():
 
     print("\n>>> Best Path Demand ➔ Source :")
     print([get_node_name(r) for r in best_path_from_demand])
+
+    
 
     debug_printed=False #for repulsion
     # Draw initial scene BEFORE repulsion
@@ -469,35 +468,57 @@ def main():
             obstacle.draw(screen)
             pygame.draw.circle(screen, (255, 200, 200), (int(obstacle.x), int(obstacle.y)), CONNECTION_DISTANCE, 1)
 
-        apply_virtual_forces(robots, obstacles, best_path_from_source, CONNECTION_DISTANCE, source, demand, connections)
+        for robot in robots:
+                for obstacle in obstacles:
+                    dx = robot.x - obstacle.x
+                    dy = robot.y - obstacle.y
+                    dist = math.hypot(dx, dy)
+                    if dist < 120:
+                        if dist != 0:
+                            dx /= dist
+                            dy /= dist
+                        repel_strength = 1.5 * (120 - dist) / 120
+                        # Store original position
+                        original_x, original_y = robot.x, robot.y
 
-        first = best_path_from_source[0] if best_path_from_source else None
-        
-        if isinstance(first, Robot) and distance(source, first) > CONNECTION_DISTANCE:
-            print("Rebuilding best path from Source — connection to first robot broken after force update")
-            
+                        # Tentatively move
+                        robot.x += dx * repel_strength
+                        robot.y += dy * repel_strength
+
+                        # Check if all existing connections are still valid
+                        still_connected = all(
+                            distance(robot, neighbor) <= CONNECTION_DISTANCE
+                            for (r1, r2) in connections
+                            if robot in (r1, r2)
+                            for neighbor in [r2 if r1 == robot else r1 if r2 == robot else None]
+                            if neighbor is not None
+                        )
+
+                        # If a connection would break, revert movement
+                        if not still_connected:
+                            robot.x, robot.y = original_x, original_y
+
+
             # Recalcular conexiones físicas después del movimiento
-            connections = []
-            for i in range(len(robots)):
-                for j in range(i + 1, len(robots)):
-                    if distance(robots[i], robots[j]) <= CONNECTION_DISTANCE:
-                        connect(robots[i], robots[j], connections)
+        connections = []
+        for i in range(len(robots)):
+            for j in range(i + 1, len(robots)):
+                if distance(robots[i], robots[j]) <= CONNECTION_DISTANCE:
+                    connect(robots[i], robots[j], connections)
 
-            for robot in robots:
-                if distance(robot, source) <= CONNECTION_DISTANCE:
-                    connect(robot, source, connections)
-                if distance(robot, demand) <= CONNECTION_DISTANCE:
-                    connect(robot, demand, connections)
+        for robot in robots:
+            if distance(robot, source) <= CONNECTION_DISTANCE:
+                 connect(robot, source, connections)
+            if distance(robot, demand) <= CONNECTION_DISTANCE:
+                connect(robot, demand, connections)
 
             # Volver a propagar hops y reconstruir el path
-            propagate_local_hop_count(source, robots, connections, 'hop_from_source', 'parent_from_source', obstacles)
-            propagate_local_hop_count(demand, robots, connections, 'hop_from_demand', 'parent_from_demand', obstacles)
+        propagate_local_hop_count(source, robots, connections, 'hop_from_source', 'parent_from_source')
+        propagate_local_hop_count(demand, robots, connections, 'hop_from_demand', 'parent_from_demand')
+        best_path_from_source = build_optimal_path(source, demand, robots, connections, 'hop_from_source')
+        best_path_from_demand = build_optimal_path(demand, source, robots, connections, 'hop_from_demand')
 
-
-            best_path_from_source = build_optimal_path(source, demand, robots, connections, 'hop_from_source')
-            best_path_from_demand = build_optimal_path(demand, source, robots, connections, 'hop_from_demand')
-
-
+            
 
         """
         #  Debug only once
