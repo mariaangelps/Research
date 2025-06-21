@@ -6,14 +6,14 @@ from class_robot import Robot
 from class_source_and_demand import Source, Demand
 from class_obs import Obstacle
 
-ARENA_WIDTH, ARENA_HEIGHT = 700, 300
-ROBOT_RADIUS = 7
-N_ROBOTS = 5
+ARENA_WIDTH, ARENA_HEIGHT = 600, 300
+ROBOT_RADIUS = 10
+N_ROBOTS = 20
 #N_EXTRA_ROBOTS = 10
 CONNECTION_DISTANCE = 120
-# Example: create 3 random obstacles
+# create random obstacles
 obstacles = []
-for _ in range(2):
+for _ in range(1):
     x = random.randint(150, ARENA_WIDTH - 150)
     y = random.randint(100, ARENA_HEIGHT - 100)
     obstacles.append(Obstacle(x, y))
@@ -133,15 +133,19 @@ def existe_ruta_fisica(a, b, conexiones_fisicas):
     return False
 def get_node_name(n):
     return n.name if isinstance(n, Node) else f"Robot {n.robot_id}"
+
+
 def is_in_obstacle_range(robot, obstacles, danger_radius):
-    ALLOW_MARGIN = 0.98  
+
+    ALLOW_MARGIN = 0.97
     for obs in obstacles:
         dist = math.hypot(robot.x - obs.x, robot.y - obs.y)
         if dist < danger_radius * ALLOW_MARGIN:
             return True
     return False
-def apply_virtual_forces(robots, obstacles, best_path, connection_distance, optimal_path_links):
 
+
+def apply_virtual_forces(robots, obstacles, best_path, connection_distance, optimal_path_links):
 
     # --- 1. Repulsion from obstacles ---
     for robot in robots:
@@ -149,11 +153,12 @@ def apply_virtual_forces(robots, obstacles, best_path, connection_distance, opti
             dx = robot.x - obstacle.x
             dy = robot.y - obstacle.y
             dist = math.hypot(dx, dy)
-            if dist < 120:
+            if dist < 60:
                 dx /= dist
                 dy /= dist
 
-                repel_strength =1*(120 -dist)
+                repel_strength =1*(60 -dist)
+                rvector = (dx, dy)
 
                 robot.x += dx * repel_strength
                 robot.y += dy * repel_strength
@@ -175,7 +180,7 @@ def apply_virtual_forces(robots, obstacles, best_path, connection_distance, opti
             dx = neighbor.x - robot.x
             dy = neighbor.y - robot.y
             dist = math.hypot(dx, dy)
-
+            
             # --- Attraction if out of range ---
             if dist > connection_distance:
                 dx /= dist
@@ -192,7 +197,7 @@ def apply_virtual_forces(robots, obstacles, best_path, connection_distance, opti
                 robot.x -= dx * repel_strength
                 robot.y -= dy * repel_strength
 
-
+            
 
         # 3. Reconnect isolated golden-path robots (optional recovery)
     for robot in robots:
@@ -475,7 +480,8 @@ def main():
         for i in range(len(robots)):
             for j in range(i + 1, len(robots)):
                 if distance(robots[i], robots[j]) <= CONNECTION_DISTANCE:
-                    if not is_in_obstacle_range(robots[i], obstacles, CONNECTION_DISTANCE) and not is_in_obstacle_range(robots[j], obstacles, CONNECTION_DISTANCE):
+
+                    #if not is_in_obstacle_range(robots[i], obstacles, CONNECTION_DISTANCE) and not is_in_obstacle_range(robots[j], obstacles, CONNECTION_DISTANCE):
                         connect(robots[i], robots[j], connections)
 
 
@@ -585,15 +591,17 @@ def main():
     print("\n>>> Best Path Demand ➔ Source :")
     print([get_node_name(r) for r in best_path_from_demand])
 
+    """
     print("\n>>> Robots in ORANGE Path (Source ➔ Demand):")
     orange_path_src = [f"R{n.robot_id}" for n in best_path_from_source if isinstance(n, Robot)]
     print(" ➔ ".join(orange_path_src))
-
+   
     print("\n>>> Robots in ORANGE Path (Demand ➔ Source):")
     orange_path_dst = [f"R{n.robot_id}" for n in best_path_from_demand if isinstance(n, Robot)]
     print(" ➔ ".join(orange_path_dst))
 
-    debug_printed=False #for repulsion
+    """
+
     # Draw initial scene BEFORE repulsion
     screen.fill((255, 255, 255))
     source.draw(screen)
@@ -602,7 +610,7 @@ def main():
     # Draw obstacles and connection range
     for obstacle in obstacles:
         obstacle.draw(screen)
-        pygame.draw.circle(screen, (255, 200, 200), (int(obstacle.x), int(obstacle.y)), CONNECTION_DISTANCE, 1)
+        pygame.draw.circle(screen, (255, 200, 200), (int(obstacle.x), int(obstacle.y)), 60, 1)
 
     # Draw all connections
     for a, b in connections:
@@ -621,7 +629,9 @@ def main():
     # Draw robots
     robots_in_path = {r for r in best_path_from_source if isinstance(r, Robot)}
     for robot in robots:
+
         if is_in_obstacle_range(robot, obstacles, CONNECTION_DISTANCE):
+
             robot.draw(screen, color=(180, 80, 0))  # naranja para peligro
             
         elif robot in robots_in_path:
@@ -652,7 +662,7 @@ def main():
         # Repulsion force (only visualization for now)
         for obstacle in obstacles:
             obstacle.draw(screen)
-            pygame.draw.circle(screen, (255, 200, 200), (int(obstacle.x), int(obstacle.y)), CONNECTION_DISTANCE, 1)
+            pygame.draw.circle(screen, (255, 200, 200), (int(obstacle.x), int(obstacle.y)), 60, 1)
 
             apply_virtual_forces(robots, obstacles, best_path_from_source, CONNECTION_DISTANCE, fixed_connections)
             #enforce_connection_constraints(robots, fixed_connections, CONNECTION_DISTANCE)
@@ -663,14 +673,14 @@ def main():
                     dx = robot.x - obstacle.x
                     dy = robot.y - obstacle.y
                     dist = math.hypot(dx, dy)
-                    if dist < 120:
+                    if dist < 60:
                         """"
                         if dist != 0:
                             dx /= dist
                             dy /= dist
 
                         """
-                        repel_strength = 1* (120 - dist) 
+                        repel_strength = 1* (60 - dist) 
                         # Store original position
                         original_x, original_y = robot.x, robot.y
 
@@ -712,59 +722,12 @@ def main():
         best_path_from_source = build_path_after_repulsion(source, demand, robots, connections, 'hop_from_source')
         best_path_from_demand = build_path_after_repulsion(demand, source, robots, connections, 'hop_from_demand')
 
-        if not debug_printed:
-            print("\n--- DEBUGGING: Robots in range ---")
-            for robot in robots:
-                in_range = []
-                for other in robots:
-                    if robot != other and distance(robot, other) <= CONNECTION_DISTANCE:
-                        in_range.append(other.robot_id)
-                if in_range:
-                    print(f" Robot {robot.robot_id} can directly connect to robots: {in_range}")
-                else:
-                    print(f" Robot {robot.robot_id} is isolated — no robots in range")
-            print("\n--- DEBUGGING: Source direct connections ---")
-            direct_from_source = []
-            for robot in robots:
-                if distance(source, robot) <= CONNECTION_DISTANCE:
-                    direct_from_source.append(robot.robot_id)
-            #gotta fix this print statement 
-            print(f"Source can directly connect to robots after repulsion: {direct_from_source}")
-
-            print("\n--- DEBUGGING: Demand direct connections ---")
-            direct_from_demand = []
-            for robot in robots:
-                if distance(demand, robot) <= CONNECTION_DISTANCE:
-                    direct_from_demand.append(robot.robot_id)
-            print(f"Demand can directly connect to robots after repulsion: {direct_from_demand}")
-
-            print("\n--- UPDATED AFTER REPULSION ---")
-            for r in robots:
-                total_hops = (
-                    r.hop_from_source + r.hop_from_demand
-                    if r.hop_from_source is not None and r.hop_from_demand is not None
-                    else None
-                )
-                print(f"Robot {r.robot_id} | SourceHop: {r.hop_from_source} | DemandHop: {r.hop_from_demand} | TotalHop: {total_hops}")
-
-            print("\n>>> Best Path Source ➔ Demand (After Repulsion):")
-            print([get_node_name(r) for r in best_path_from_source])
-            print("\n>>> Best Path Demand ➔ Source (After Repulsion):")
-            print([get_node_name(r) for r in best_path_from_demand])
-
-                
-
-            debug_printed = True  
-
-
-
-        
-
         
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
-
+    
+        
         for a, b in connections:
             pygame.draw.line(screen, (210, 210, 210), (a.x, a.y), (b.x, b.y), 1)
 
@@ -773,9 +736,10 @@ def main():
                              (best_path_from_source[i + 1].x, best_path_from_source[i + 1].y), 3)
         
         # Draw fixed optimal connections (in orange)
+        """
         for (r1, r2) in fixed_connections:
             pygame.draw.line(screen, (255, 165, 0), (r1.x, r1.y), (r2.x, r2.y), 2)
-        
+        """
 
         for i in range(len(best_path_from_demand) - 1):
             pygame.draw.line(screen, (0, 100, 255), (best_path_from_demand[i].x, best_path_from_demand[i].y),
@@ -783,37 +747,60 @@ def main():
 
         # Create a set of robots in the optimal path for quick lookup
         robots_in_path = {r for r in best_path_from_source if isinstance(r, Robot)}
+
         
 
         
         # Range visually detected
-        
+        """
         
         for robot in robots:
             pygame.draw.circle(screen, (180, 180, 180), (int(robot.x), int(robot.y)), CONNECTION_DISTANCE, 1)
         
-        
+        """
         for robot in robots:
-            if robot in robots_in_path:
-                robot.draw(screen, color=(0, 200, 0))  # green
+            if is_in_obstacle_range(robot, obstacles, CONNECTION_DISTANCE):
+                robot.draw(screen, color=(180, 80, 0))  # naranja para peligro
+            elif robot in robots_in_path:
+                robot.draw(screen, color=(0, 200, 0))  # verde
             else:
-                robot.draw(screen, color=(0, 100, 255))  # blue
-        
+                robot.draw(screen, color=(0, 100, 255))  # azul
+
 
         pygame.display.flip()
+    print("\n--- FINAL DEBUGGING: Robots in range ---")
+    for robot in robots:
+        in_range = [o.robot_id for o in robots
+                    if o != robot and distance(robot, o) <= CONNECTION_DISTANCE]
+        if in_range:
+            print(f" Robot {robot.robot_id} can directly connect to robots: {in_range}")
+        else:
+            print(f" Robot {robot.robot_id} is isolated — no robots in range")
 
-    pygame.quit()
-    print("\n\n=== FINAL OPTIMAL PATHS AFTER MOVEMENT ===")
-    print("Best Path Source ➔ Demand:")
+    print("\n--- FINAL DEBUGGING: Source direct connections ---")
+    direct_from_source = [r.robot_id for r in robots
+                          if distance(source, r) <= CONNECTION_DISTANCE]
+    print(f"Source can directly connect to robots after repulsion: {direct_from_source}")
+
+    print("\n--- FINAL DEBUGGING: Demand direct connections ---")
+    direct_from_demand = [r.robot_id for r in robots
+                          if distance(demand, r) <= CONNECTION_DISTANCE]
+    print(f"Demand can directly connect to robots after repulsion: {direct_from_demand}")
+
+    print("\n--- UPDATED FINAL STATE AFTER REPULSION ---")
+    for r in robots:
+        total_hops = (r.hop_from_source + r.hop_from_demand
+                      if r.hop_from_source is not None and r.hop_from_demand is not None
+                      else None)
+        print(f"Robot {r.robot_id} | SourceHop: {r.hop_from_source} | DemandHop: {r.hop_from_demand} | TotalHop: {total_hops}")
+
+    print("\n>>> Final Best Path Source ➔ Demand (After Repulsion):")
     print([get_node_name(r) for r in best_path_from_source])
-
-    print("\nBest Path Demand ➔ Source:")
+    print("\n>>> Final Best Path Demand ➔ Source (After Repulsion):")
     print([get_node_name(r) for r in best_path_from_demand])
-    if best_path_from_source[-1] != demand:
-        print("\n⚠️ WARNING: Final path from Source does not reach Demand.")
-
-    if best_path_from_demand[-1] != source:
-        print("⚠️ WARNING: Final path from Demand does not reach Source.")
+    
+    pygame.quit()
+    
 
 
 
