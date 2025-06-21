@@ -6,7 +6,7 @@ from class_robot import Robot
 from class_source_and_demand import Source, Demand
 from class_obs import Obstacle
 
-ARENA_WIDTH, ARENA_HEIGHT = 900, 400
+ARENA_WIDTH, ARENA_HEIGHT = 700, 400
 ROBOT_RADIUS = 7
 N_ROBOTS = 5
 #N_EXTRA_ROBOTS = 10
@@ -136,7 +136,7 @@ def get_node_name(n):
 
 def apply_virtual_forces(robots, obstacles, best_path, connection_distance, optimal_path_links):
 
-    # --- 1. Repulsion from obstacles ---
+
     # --- 1. Repulsion from obstacles ---
     for robot in robots:
         for obstacle in obstacles:
@@ -148,24 +148,11 @@ def apply_virtual_forces(robots, obstacles, best_path, connection_distance, opti
                 dy /= dist
 
                 repel_strength =1*(120 -dist)
-                original_x, original_y = robot.x, robot.y
 
                 robot.x += dx * repel_strength
                 robot.y += dy * repel_strength
-            # Check if all existing connections are still valid
-                still_connected = all(
-                    distance(robot, neighbor) <= CONNECTION_DISTANCE
-                    for (r1, r2) in connections
-                    if robot in (r1, r2)
-                    for neighbor in [r2 if r1 == robot else r1 if r2 == robot else None]
-                    if neighbor is not None
-                    )
 
-                        # If a connection would break, revert movement
-                    if not still_connected:
-                        robot.x, robot.y = original_x, original_y
-
-    """
+    
     # --- 2. Attraction to path neighbors (only robots in best path) ---
     for idx, robot in enumerate(best_path):
         if not isinstance(robot, Robot):
@@ -280,7 +267,7 @@ def apply_virtual_forces(robots, obstacles, best_path, connection_distance, opti
             r1.y += dy * restoring_force * 0.5
             r2.x -= dx * restoring_force * 0.5
             r2.y -= dy * restoring_force * 0.5
-"""
+
 # --- ENFORCE CONNECTION CONSTRAINTS ---
 # This runs after computing the forces, but before applying movement.
 # It ensures robots don't break any existing fixed connection due to motion.
