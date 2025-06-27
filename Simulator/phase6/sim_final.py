@@ -373,7 +373,17 @@ def build_optimal_path(start, end, robots, connections, hop_attr):
             break
 
         #  choose robot with least total hop count
-        _, best_next = min(candidates, key=lambda x: x[0])
+        #_, best_next = min(candidates, key=lambda x: x[0])
+        def connection_score(robot, connections):
+            vecinos = [
+                r2 for (r1, r2) in connections if r1 == robot and isinstance(r2, Robot)
+            ] + [
+                r1 for (r1, r2) in connections if r2 == robot and isinstance(r1, Robot)
+            ]
+            return -len(vecinos)
+
+        _, best_next = min(candidates, key=lambda x: (x[0], connection_score(x[1], connections)))
+
 
         path.append(best_next)
         visited.add(best_next)
@@ -430,8 +440,19 @@ def build_path_after_repulsion(start, end, robots, connections, hop_attr):
         if not candidates:
             break
 
-        candidates.sort(key=lambda x: (x[0], x[1].robot_id))
+        #candidates.sort(key=lambda x: (x[0], x[1].robot_id))
+        #best_next = candidates[0][1]
+        def connection_score(robot, connections):
+            vecinos = [
+                r2 for (r1, r2) in connections if r1 == robot and isinstance(r2, Robot)
+            ] + [
+                r1 for (r1, r2) in connections if r2 == robot and isinstance(r1, Robot)
+            ]
+            return -len(vecinos)
+
+        candidates.sort(key=lambda x: (x[0], connection_score(x[1], connections)))
         best_next = candidates[0][1]
+
 
         path.append(best_next)
         visited.add(best_next)
