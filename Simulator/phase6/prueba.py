@@ -143,17 +143,13 @@ def apply_virtual_forces(robots, obstacles, best_path, connection_distance, opti
             dx = robot.x - obstacle.x
             dy = robot.y - obstacle.y
             dist = math.hypot(dx, dy)
-            if dist < connection_distance and dist != 0:
+            if dist < 60 :
                 dx /= dist
                 dy /= dist
 
-                # 🚨 Stronger repulsion for robots in the optimal path
-                if robot in best_path:
-                    multiplier = 2.5  # stronger repulsion
-                else:
-                    multiplier = 1.5  # normal repulsion
+                
 
-                repel_strength = multiplier * (connection_distance - dist) / connection_distance
+                repel_strength = 1 * (60 - dist)
                 robot.next_x += dx * repel_strength
                 robot.next_y += dy * repel_strength
 
@@ -572,7 +568,7 @@ def main():
         # Repulsion force (only visualization for now)
         for obstacle in obstacles:
             obstacle.draw(screen)
-            pygame.draw.circle(screen, (255, 200, 200), (int(obstacle.x), int(obstacle.y)), CONNECTION_DISTANCE, 1)
+            pygame.draw.circle(screen, (255, 200, 200), (int(obstacle.x), int(obstacle.y)), 60, 1)
 
 
 

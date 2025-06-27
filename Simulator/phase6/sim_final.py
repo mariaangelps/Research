@@ -7,13 +7,13 @@ from class_source_and_demand import Source, Demand
 from class_obs import Obstacle
 
 ARENA_WIDTH, ARENA_HEIGHT = 600, 300
-ROBOT_RADIUS = 10
+ROBOT_RADIUS = 5
 N_ROBOTS = 20
 #N_EXTRA_ROBOTS = 10
 CONNECTION_DISTANCE = 120
 # create random obstacles
 obstacles = []
-for _ in range(1):
+for _ in range(2):
     x = random.randint(150, ARENA_WIDTH - 150)
     y = random.randint(100, ARENA_HEIGHT - 100)
     obstacles.append(Obstacle(x, y))
@@ -630,11 +630,11 @@ def main():
     robots_in_path = {r for r in best_path_from_source if isinstance(r, Robot)}
     for robot in robots:
 
-        if is_in_obstacle_range(robot, obstacles, CONNECTION_DISTANCE):
+        if is_in_obstacle_range(robot, obstacles, 60):
 
             robot.draw(screen, color=(180, 80, 0))  # naranja para peligro
             
-        elif robot in robots_in_path:
+        #elif robot in robots_in_path:
             robot.draw(screen, color=(0, 200, 0))  # green
         else:
             robot.draw(screen, color=(0, 100, 255))  # blue
@@ -759,7 +759,7 @@ def main():
         
         """
         for robot in robots:
-            if is_in_obstacle_range(robot, obstacles, CONNECTION_DISTANCE):
+            if is_in_obstacle_range(robot, obstacles, 60):
                 robot.draw(screen, color=(180, 80, 0))  # naranja para peligro
             elif robot in robots_in_path:
                 robot.draw(screen, color=(0, 200, 0))  # verde
