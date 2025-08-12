@@ -3,7 +3,7 @@ import random
 import math
 from collections import deque
 from class_robot import Robot
-#from class_source_and_demand import Source, Demand
+from class_source_and_demand import Source, Demand
 from class_obs import Obstacle
 
 ARENA_WIDTH, ARENA_HEIGHT = 600, 300
@@ -522,8 +522,9 @@ def main():
                 if distance(robot, d) <= CONNECTION_DISTANCE:
                     connect(robot, d, connections)
 
+        demand_target = demands[0]  # por ahora, usa la primera
 
-        connected = is_path_exists(source, demands, robots, connections)
+        connected = is_path_exists(source, demand_target, robots, connections)  # ✅
 
     print(f"Connected after {attempts} attempts.")
 
@@ -548,14 +549,15 @@ def main():
 
     print("\n--- DEBUGGING: Demand direct connections ---")
     direct_from_demand = []
-    for robot in robots:
-        if distance(demands, robot) <= CONNECTION_DISTANCE:
-            direct_from_demand.append(robot.robot_id)
+    for d in demands:  # ✅ imprime por cada demanda
+        direct_from_d = [r.robot_id for r in robots if distance(d, r) <= CONNECTION_DISTANCE]
+        print(f"{d.name} can directly connect to robots: {direct_from_d}")
+
     print(f"Demand can directly connect to robots: {direct_from_demand}")
 
 
     propagate_local_hop_count(source, robots, connections, 'hop_from_source', 'parent_from_source')
-    propagate_local_hop_count(demands, robots, connections, 'hop_from_demand', 'parent_from_demand')
+    propagate_local_hop_count(demand_target, robots, connections, 'hop_from_demand', 'parent_from_demand')
 
     print("\n--- DEBUGGING ---")
     for r in robots:
@@ -565,8 +567,8 @@ def main():
         print(f"Robot {r.robot_id} | SourceHop: {r.hop_from_source} | DemandHop: {r.hop_from_demand} | TotalHop: {total_hops}")
     print("------------------")
 
-    best_path_from_source = build_optimal_path(source, demands, robots, connections, 'hop_from_source')
-    best_path_from_demand = build_optimal_path(demands, source, robots, connections, 'hop_from_demand') 
+    best_path_from_source = build_optimal_path(source, demand_target, robots, connections, 'hop_from_source')  
+    best_path_from_demand = build_optimal_path(demand_target, source, robots, connections, 'hop_from_demand')  
 
 
     fixed_connections = set()
@@ -635,7 +637,9 @@ def main():
     # Draw initial scene BEFORE repulsion
     screen.fill((255, 255, 255))
     source.draw(screen)
-    demands.draw(screen)
+    for d in demands:      
+        d.draw(screen)
+
 
     # Draw obstacles and connection range
     for obstacle in obstacles:
@@ -688,7 +692,8 @@ def main():
     while running:
         screen.fill((255, 255, 255))
         source.draw(screen)
-        demands.draw(screen)
+        for d in demands:
+            d.draw(screen)
 
         #obstacles 
         # Repulsion force (only visualization for now)
@@ -698,8 +703,8 @@ def main():
 
             apply_virtual_forces(robots, obstacles, best_path_from_source, CONNECTION_DISTANCE, fixed_connections)
             #enforce_connection_constraints(robots, fixed_connections, CONNECTION_DISTANCE)
-            
             # Apply repulsion
+            
             for robot in robots:
                 for obstacle in obstacles:
                     dx = robot.x - obstacle.x
@@ -732,8 +737,8 @@ def main():
                         # If a connection would break, revert movement
                         if not still_connected:
                             robot.x, robot.y = original_x, original_y
-
-
+    
+            
         # Recalculate connections based on new positions
         connections = []
         for i in range(len(robots)):
@@ -750,11 +755,10 @@ def main():
 
         # Update hops and paths after movement
         propagate_local_hop_count(source, robots, connections, 'hop_from_source', 'parent_from_source')
-        propagate_local_hop_count(demands, robots, connections, 'hop_from_demand', 'parent_from_demand')
+        propagate_local_hop_count(demand_target, robots, connections, 'hop_from_demand', 'parent_from_demand')
 
         best_path_from_source = build_path_after_repulsion(source, demands, robots, connections, 'hop_from_source')
-        best_path_from_demand = build_path_after_repulsion(demands, source, robots, connections, 'hop_from_demand')
-
+        best_path_from_demand = build_path_after_repulsion(demand_target, source, robots, connections, 'hop_from_demand')
         
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -816,9 +820,9 @@ def main():
     print(f"Source can directly connect to robots after repulsion: {direct_from_source}")
 
     print("\n--- FINAL DEBUGGING: Demand direct connections ---")
-    direct_from_demand = [r.robot_id for r in robots
-                          if distance(demands, r) <= CONNECTION_DISTANCE]
-    print(f"Demand can directly connect to robots after repulsion: {direct_from_demand}")
+    for d in demands:
+        direct_from_d = [r.robot_id for r in robots if distance(d, r) <= CONNECTION_DISTANCE]
+        print(f"{d.name} can directly connect to robots after repulsion: {direct_from_d}")
 
     print("\n--- UPDATED FINAL STATE AFTER REPULSION ---")
     for r in robots:
