@@ -3,7 +3,7 @@ import random
 import math
 from collections import deque
 from class_robot import Robot
-from class_source_and_demand import Source, Demand
+#from class_source_and_demand import Source, Demand
 from class_obs import Obstacle
 
 ARENA_WIDTH, ARENA_HEIGHT = 600, 300
@@ -476,6 +476,8 @@ obstacles_active = True  # as soon as virtual forces are used
 
 def main():
     pygame.init()
+    clock = pygame.time.Clock()
+
     screen = pygame.display.set_mode((ARENA_WIDTH, ARENA_HEIGHT))
     pygame.display.set_caption("Hop Count - Source & Demand Optimal Path")
 
@@ -633,7 +635,7 @@ def main():
     # Draw initial scene BEFORE repulsion
     screen.fill((255, 255, 255))
     source.draw(screen)
-    demand.draw(screen)
+    demands.draw(screen)
 
     # Draw obstacles and connection range
     for obstacle in obstacles:
@@ -669,6 +671,8 @@ def main():
         
 
     pygame.display.flip()
+    clock.tick(60)   # limita a ~60 FPS (pon 30 si quieres aún menos carga)
+
 
     # WAIT FOR KEY PRESS BEFORE CONTINUING
     waiting = True
