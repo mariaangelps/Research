@@ -9,7 +9,7 @@ from class_obs import Obstacle
 ARENA_WIDTH, ARENA_HEIGHT = 600, 300
 ROBOT_RADIUS = 5
 N_ROBOTS = 20
-N_DEMANDS = 5
+N_DEMANDS = 2
 #N_EXTRA_ROBOTS = 10
 CONNECTION_DISTANCE = 120
 # create random obstacles
@@ -527,6 +527,46 @@ def build_path_after_repulsion(start, end, robots, connections, hop_attr):
 obstacles_active = True  # as soon as virtual forces are used
 
 
+def debug_global_choice(source, demands, robots, connections, best_demand):
+    # Asegura hops desde source (como en choose_best_demand)
+    propagate_local_hop_count(source, robots, connections,
+                              'hop_from_source', 'parent_from_source')
+
+    rows = []  # (name, min_total, tie_len, best_robot_id)
+
+    for d in demands:
+        # Hops desde esta demanda
+        propagate_local_hop_count(d, robots, connections,
+                                  'hop_from_demand', 'parent_from_demand')
+
+        # Camino source -> d
+        path_src = build_optimal_path(source, d, robots, connections, 'hop_from_source')
+        tie_len = len(path_src)
+
+        # Calcula min_total y el robot que lo logra
+        eligibles = [
+            (r.robot_id, r.hop_from_source, r.hop_from_demand,
+             r.hop_from_source + r.hop_from_demand)
+            for r in robots
+            if r.hop_from_source is not None and r.hop_from_demand is not None
+        ]
+        if eligibles:
+            best_robot = min(eligibles, key=lambda t: t[3])  # por total
+            min_total = best_robot[3]
+            best_robot_id = best_robot[0]
+        else:
+            min_total = float('inf')
+            best_robot_id = None
+
+        rows.append((d.name, min_total, tie_len, best_robot_id))
+
+    # Ganadora según la misma regla (min_total, luego tie_len)
+    winner = min(rows, key=lambda x: (x[1], x[2])) if rows else None
+
+    print("\n--- WHY THIS DEMAND WON (GLOBAL) ---")
+    for name, min_total, tie_len, bridger in rows:
+        mark = "  <= winner" if (best_demand and name == best_demand.name) else ""
+        print(f"{name} | min_total: {min_total} | tie_len: {tie_len} | via robot: {bridger}{mark}")
 
 
 
@@ -617,15 +657,33 @@ def main():
     best_demand, best_path_from_source, best_path_from_demand = choose_best_demand(
     source, demands, robots, connections
 )
+    debug_global_choice(source, demands, robots, connections, best_demand)
+
     print("\n--- DEBUGGING BEFORE REPULSION---")
-    demand_names = [d.name for d in demands] 
+    demand_names = [d.name for d in demands]
     best_d_name  = best_demand.name if best_demand else None
-    
+
     for r in robots:
+        # Hop hacia la demanda ganadora GLOBAL
         best_d_hop = r.demand_hops.get(best_d_name, None) if best_d_name else None
+
+        # String de hops por demanda
         demand_hops_str = ", ".join(f"{dn}:{r.demand_hops.get(dn, None)}" for dn in demand_names)
 
-        total_best = (
+        # 1) Mejor DEMANDA POR HOP (solo distancia a la demanda, sin source)
+        per_hop = [(dn, r.demand_hops.get(dn)) for dn in demand_names if r.demand_hops.get(dn) is not None]
+        robot_best_hop = min(per_hop, key=lambda x: x[1]) if per_hop else (None, None)  # (nombre, hop)
+
+        # 2) Mejor DEMANDA POR TOTAL (source + demand) para ESTE robot
+        per_total = [
+            (dn, r.hop_from_source + r.demand_hops.get(dn))
+            for dn in demand_names
+            if r.hop_from_source is not None and r.demand_hops.get(dn) is not None
+        ]
+        robot_best_total = min(per_total, key=lambda x: x[1]) if per_total else (None, None)  # (nombre, total)
+
+        # Total con la DEMANDA GLOBAL ganadora
+        total_global = (
             r.hop_from_source + best_d_hop
             if r.hop_from_source is not None and best_d_hop is not None
             else None
@@ -634,9 +692,13 @@ def main():
         print(
             f"Robot {r.robot_id} | SourceHop: {r.hop_from_source} | "
             f"DemandHops[{demand_hops_str}] | "
-            f"BestDemand:{best_d_name} | BestDemandHop:{best_d_hop} | "
-            f"TotalHop: {total_best}"
+            f"TotalHop-Robot:{robot_best_hop[1]} | "
+            #f"RobotBestTotal:{robot_best_total[0]}@{robot_best_total[1]} | "
+            f"GlobalBest:{best_d_name}@{best_d_hop} | "
+            f"TotalHop-Global: {total_global}\n"
         )
+
+        
         print()  
     print("------------------")
 
@@ -908,16 +970,31 @@ def main():
         print(f"{d.name} can directly connect to robots after repulsion: {direct_from_d}")
 
     print("\n--- UPDATED FINAL STATE AFTER REPULSION ---")
-    demand_names = [d.name for d in demands]  # ['D1','D2','D3','D4','D5']
+    debug_global_choice(source, demands, robots, connections, best_demand)
+    demand_names = [d.name for d in demands]
+    best_d_name  = best_demand.name if best_demand else None
+
     for r in robots:
-        best_d_name = best_demand.name if best_demand else None
-        best_d_hop  = r.demand_hops.get(best_d_name, None) if best_d_name else None
+        # Hop hacia la demanda ganadora GLOBAL
+        best_d_hop = r.demand_hops.get(best_d_name, None) if best_d_name else None
 
-        demand_hops_str = ", ".join(
-            f"{dn}:{r.demand_hops.get(dn, None)}" for dn in demand_names
-        )
+        # String de hops por demanda
+        demand_hops_str = ", ".join(f"{dn}:{r.demand_hops.get(dn, None)}" for dn in demand_names)
 
-        total_best = (
+        # 1) Mejor DEMANDA POR HOP (solo distancia a la demanda, sin source)
+        per_hop = [(dn, r.demand_hops.get(dn)) for dn in demand_names if r.demand_hops.get(dn) is not None]
+        robot_best_hop = min(per_hop, key=lambda x: x[1]) if per_hop else (None, None)  # (nombre, hop)
+
+        # 2) Mejor DEMANDA POR TOTAL (source + demand) para ESTE robot
+        per_total = [
+            (dn, r.hop_from_source + r.demand_hops.get(dn))
+            for dn in demand_names
+            if r.hop_from_source is not None and r.demand_hops.get(dn) is not None
+        ]
+        robot_best_total = min(per_total, key=lambda x: x[1]) if per_total else (None, None)  # (nombre, total)
+
+        # Total con la DEMANDA GLOBAL ganadora
+        total_global = (
             r.hop_from_source + best_d_hop
             if r.hop_from_source is not None and best_d_hop is not None
             else None
@@ -926,8 +1003,10 @@ def main():
         print(
             f"Robot {r.robot_id} | SourceHop: {r.hop_from_source} | "
             f"DemandHops[{demand_hops_str}] | "
-            f"BestDemand:{best_d_name} | BestDemandHop:{best_d_hop} | "
-            f"TotalHop: {total_best}"
+            #f"TotalHop-Robot:{robot_best_hop[1]} | "
+            f"Robot Total Hop: {robot_best_total[1]} connects with {robot_best_total[0]} | "
+            f"Best Demand: {best_d_name} with hop of {best_d_hop} | "
+            f"TotalHop-Global: {total_global}\n"
         )
         print()  
 
