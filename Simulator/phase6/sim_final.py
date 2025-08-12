@@ -8,7 +8,7 @@ from class_obs import Obstacle
 
 ARENA_WIDTH, ARENA_HEIGHT = 600, 300
 ROBOT_RADIUS = 5
-N_ROBOTS = 20
+N_ROBOTS = 45
 #N_EXTRA_ROBOTS = 10
 CONNECTION_DISTANCE = 120
 # create random obstacles

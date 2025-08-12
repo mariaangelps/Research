@@ -9,7 +9,7 @@ from class_obs import Obstacle
 ARENA_WIDTH, ARENA_HEIGHT = 600, 300
 ROBOT_RADIUS = 5
 N_ROBOTS = 20
-N_DEMANDS = 2
+N_DEMANDS = 5
 #N_EXTRA_ROBOTS = 10
 CONNECTION_DISTANCE = 120
 # create random obstacles
@@ -92,11 +92,13 @@ def propagate_local_hop_count(source, robots, connections, attr_hop, attr_parent
                 queue.append((neighbor, hops + 1, current))
 
 def is_path_exists(source, demands, robots, connections):
+    dem_set = set(demands)
     visited = set()
     queue = [source]
     while queue:
         current = queue.pop(0)
-        if current == demands:
+        if current in dem_set:
+            # If we reach any demand, return True
             return True
         visited.add(current)
         for a, b in connections:
@@ -326,6 +328,60 @@ def is_best_path_valid(path, connections):
             #print(f"  - Distance: {distance(a, b):.2f}")
             return False
 
+def choose_best_demand(source, demands, robots, connections):
+    """
+    Elige la demanda con mejor (mínimo) hop total y devuelve:
+    best_demand, best_path_from_source, best_path_from_demand
+    """
+    best = {
+        "demand": None,
+        "path_src": [],
+        "path_dst": [],
+        "score": float("inf"),
+        "tie_len": float("inf"),
+    }
+
+    # Hop desde la fuente lo calculamos una sola vez (es común para todas las demandas)
+    propagate_local_hop_count(source, robots, connections,
+                              'hop_from_source', 'parent_from_source')
+
+    # DEBUG: prepare per-robot demand hop buckets
+    for r in robots:
+        r.demand_hops = {}
+
+    for d in demands:
+        # hop_from_demand se recalcula para cada demanda candidata
+        propagate_local_hop_count(d, robots, connections,
+                                  'hop_from_demand', 'parent_from_demand')
+
+            
+        # DEBUG: record hop to this specific demand for each robot
+        for r in robots:
+            r.demand_hops[d.name] = r.hop_from_demand
+    
+        path_src = build_optimal_path(source, d, robots, connections, 'hop_from_source')
+        path_dst = build_optimal_path(d, source, robots, connections, 'hop_from_demand')
+
+        # Score: mínimo (source_hop + demand_hop) entre robots que tengan ambos definidos
+        min_total = min(
+            (r.hop_from_source + r.hop_from_demand)
+            for r in robots
+            if r.hop_from_source is not None and r.hop_from_demand is not None
+        ) if any(r.hop_from_source is not None and r.hop_from_demand is not None for r in robots) else float("inf")
+
+        # Criterio principal: min_total; desempate: longitud del path principal
+        tie_len = len(path_src)
+
+        if (min_total < best["score"]) or (min_total == best["score"] and tie_len < best["tie_len"]):
+            best.update({
+                "demand": d,
+                "path_src": path_src,
+                "path_dst": path_dst,
+                "score": min_total,
+                "tie_len": tie_len
+            })
+
+    return best["demand"], best["path_src"], best["path_dst"]
 
 
 
@@ -522,9 +578,8 @@ def main():
                 if distance(robot, d) <= CONNECTION_DISTANCE:
                     connect(robot, d, connections)
 
-        demand_target = demands[0]  # por ahora, usa la primera
 
-        connected = is_path_exists(source, demand_target, robots, connections)  # ✅
+        connected = is_path_exists(source, demands, robots, connections)  # ✅
 
     print(f"Connected after {attempts} attempts.")
 
@@ -556,19 +611,41 @@ def main():
     print(f"Demand can directly connect to robots: {direct_from_demand}")
 
 
-    propagate_local_hop_count(source, robots, connections, 'hop_from_source', 'parent_from_source')
-    propagate_local_hop_count(demand_target, robots, connections, 'hop_from_demand', 'parent_from_demand')
+    #propagate_local_hop_count(source, robots, connections, 'hop_from_source', 'parent_from_source')
+    #propagate_local_hop_count(best_demand, robots, connections, 'hop_from_demand', 'parent_from_demand')
 
-    print("\n--- DEBUGGING ---")
+    best_demand, best_path_from_source, best_path_from_demand = choose_best_demand(
+    source, demands, robots, connections
+)
+    print("\n--- DEBUGGING BEFORE REPULSION---")
+    demand_names = [d.name for d in demands] 
+    best_d_name  = best_demand.name if best_demand else None
+    
     for r in robots:
-        total_hops = None
-        if r.hop_from_source is not None and r.hop_from_demand is not None:
-            total_hops = r.hop_from_source + r.hop_from_demand
-        print(f"Robot {r.robot_id} | SourceHop: {r.hop_from_source} | DemandHop: {r.hop_from_demand} | TotalHop: {total_hops}")
+        best_d_hop = r.demand_hops.get(best_d_name, None) if best_d_name else None
+        demand_hops_str = ", ".join(f"{dn}:{r.demand_hops.get(dn, None)}" for dn in demand_names)
+
+        total_best = (
+            r.hop_from_source + best_d_hop
+            if r.hop_from_source is not None and best_d_hop is not None
+            else None
+        )
+
+        print(
+            f"Robot {r.robot_id} | SourceHop: {r.hop_from_source} | "
+            f"DemandHops[{demand_hops_str}] | "
+            f"BestDemand:{best_d_name} | BestDemandHop:{best_d_hop} | "
+            f"TotalHop: {total_best}"
+        )
+        print()  
     print("------------------")
 
-    best_path_from_source = build_optimal_path(source, demand_target, robots, connections, 'hop_from_source')  
-    best_path_from_demand = build_optimal_path(demand_target, source, robots, connections, 'hop_from_demand')  
+    #best_path_from_source = build_optimal_path(source, demand_target, robots, connections, 'hop_from_source')  
+    #best_path_from_demand = build_optimal_path(demand_target, source, robots, connections, 'hop_from_demand')  
+
+    best_demand, best_path_from_source, best_path_from_demand = choose_best_demand(
+    source, demands, robots, connections
+)
 
 
     fixed_connections = set()
@@ -754,12 +831,18 @@ def main():
                     connect(robot, d, connections)
 
         # Update hops and paths after movement
+        """
         propagate_local_hop_count(source, robots, connections, 'hop_from_source', 'parent_from_source')
-        propagate_local_hop_count(demand_target, robots, connections, 'hop_from_demand', 'parent_from_demand')
+        propagate_local_hop_count(best_demand, robots, connections, 'hop_from_demand', 'parent_from_demand')
 
         best_path_from_source = build_path_after_repulsion(source, demands, robots, connections, 'hop_from_source')
-        best_path_from_demand = build_path_after_repulsion(demand_target, source, robots, connections, 'hop_from_demand')
-        
+        best_path_from_demand = build_path_after_repulsion(best_demand, source, robots, connections, 'hop_from_demand')
+        """
+        # Elegimos de nuevo la demanda óptima con la escena actual
+        best_demand, best_path_from_source, best_path_from_demand = choose_best_demand(
+            source, demands, robots, connections
+        )
+
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
@@ -825,17 +908,35 @@ def main():
         print(f"{d.name} can directly connect to robots after repulsion: {direct_from_d}")
 
     print("\n--- UPDATED FINAL STATE AFTER REPULSION ---")
+    demand_names = [d.name for d in demands]  # ['D1','D2','D3','D4','D5']
     for r in robots:
-        total_hops = (r.hop_from_source + r.hop_from_demand
-                      if r.hop_from_source is not None and r.hop_from_demand is not None
-                      else None)
-        print(f"Robot {r.robot_id} | SourceHop: {r.hop_from_source} | DemandHop: {r.hop_from_demand} | TotalHop: {total_hops}")
+        best_d_name = best_demand.name if best_demand else None
+        best_d_hop  = r.demand_hops.get(best_d_name, None) if best_d_name else None
+
+        demand_hops_str = ", ".join(
+            f"{dn}:{r.demand_hops.get(dn, None)}" for dn in demand_names
+        )
+
+        total_best = (
+            r.hop_from_source + best_d_hop
+            if r.hop_from_source is not None and best_d_hop is not None
+            else None
+        )
+
+        print(
+            f"Robot {r.robot_id} | SourceHop: {r.hop_from_source} | "
+            f"DemandHops[{demand_hops_str}] | "
+            f"BestDemand:{best_d_name} | BestDemandHop:{best_d_hop} | "
+            f"TotalHop: {total_best}"
+        )
+        print()  
 
     print("\n>>> Final Best Path Source ➔ Demand (After Repulsion):")
     print([get_node_name(r) for r in best_path_from_source])
     print("\n>>> Final Best Path Demand ➔ Source (After Repulsion):")
     print([get_node_name(r) for r in best_path_from_demand])
     
+    print(f"\n>>> Best demand chosen: {best_demand.name if best_demand else 'None'}")
     pygame.quit()
     
 
