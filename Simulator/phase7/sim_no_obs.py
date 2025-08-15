@@ -13,14 +13,14 @@ N_DEMANDS = 2
 #N_EXTRA_ROBOTS = 10
 CONNECTION_DISTANCE = 120
 # create random obstacles
-obstacles = []
+"""obstacles = []
 for _ in range(2):
     x = random.randint(150, ARENA_WIDTH - 150)
     y = random.randint(100, ARENA_HEIGHT - 100)
     obstacles.append(Obstacle(x, y))
 
 
-
+"""
 
 #with obstacles 
 class Node:
@@ -137,7 +137,7 @@ def existe_ruta_fisica(a, b, conexiones_fisicas):
 def get_node_name(n):
     return n.name if isinstance(n, Node) else f"Robot {n.robot_id}"
 
-
+"""
 def is_in_obstacle_range(robot, obstacles, danger_radius):
 
     ALLOW_MARGIN = 0.97
@@ -281,7 +281,7 @@ def apply_virtual_forces(robots, obstacles, best_path, connection_distance, opti
             r1.y += dy * restoring_force * 0.5
             r2.x -= dx * restoring_force * 0.5
             r2.y -= dy * restoring_force * 0.5
-
+"""
 # --- ENFORCE CONNECTION CONSTRAINTS ---
 # This runs after computing the forces, but before applying movement.
 # It ensures robots don't break any existing fixed connection due to motion.
@@ -524,7 +524,7 @@ def build_path_after_repulsion(start, end, robots, connections, hop_attr):
     return path
 
 
-obstacles_active = True  # as soon as virtual forces are used
+#obstacles_active = True  # as soon as virtual forces are used
 
 
 def debug_global_choice(source, demands, robots, connections, best_demand):
@@ -568,6 +568,97 @@ def debug_global_choice(source, demands, robots, connections, best_demand):
         mark = "  <= winner" if (best_demand and name == best_demand.name) else ""
         print(f"{name} | min_total: {min_total} | tie_len: {tie_len} | via robot: {bridger}{mark}")
 
+def zip_step(best_path, demand_node, connection_distance,
+             desired_ratio=0.85,    # espaciado objetivo como fracción del rango
+             tail_gain=0.8,         # “tirón” del tail hacia la demanda
+             follow_gain=0.7,       # cuánto se acercan los demás al sucesor
+             max_step=2.0):         # paso máximo por frame (px)
+    """
+    Avanza la cadena tipo 'zipper':
+      - Tail (último robot en el path) se mueve hacia la demanda.
+      - Luego, de atrás hacia adelante, cada robot se acerca al siguiente para cerrar la cadena.
+    Todo clamp-eado para no romper el límite de conexión.
+    """
+
+    if not best_path or demand_node is None:
+        return
+
+    # --- 1) Identifica índices de robots en el path (ordenados de Source -> Demand) ---
+    robots_in_path = [n for n in best_path if isinstance(n, Robot)]
+    if not robots_in_path:
+        return
+
+    tail = robots_in_path[-1]  # el más cercano a la Demand en el path
+
+    # --- 2) Tail hacia la demanda ---
+    dx = demand_node.x - tail.x
+    dy = demand_node.y - tail.y
+    dist_d = math.hypot(dx, dy)
+    if dist_d > 1e-6:
+        dx /= dist_d
+        dy /= dist_d
+
+        # no romper enlace con su “prev”
+        # buscamos el robot anterior al tail dentro del path
+        prev = None
+        if len(robots_in_path) >= 2:
+            prev = robots_in_path[-2]
+
+        step_cap = max_step
+        if prev is not None:
+            dist_prev = math.hypot(tail.x - prev.x, tail.y - prev.y)
+            slack = connection_distance * 0.98 - dist_prev  # margen de seguridad
+            if slack <= 0:
+                step_cap = 0.0
+            else:
+                step_cap = min(step_cap, slack)
+
+        step = min(step_cap, tail_gain * (dist_d / max(connection_distance, 1e-6)))
+        if step > 0:
+            tail.x += dx * step
+            tail.y += dy * step
+
+    # --- 3) Seguir al sucesor desde atrás hacia adelante (cerrar cremallera) ---
+    desired = desired_ratio * connection_distance
+    for i in range(len(robots_in_path) - 2, -1, -1):  # del penúltimo hacia el primero
+        cur = robots_in_path[i]
+        nxt = robots_in_path[i + 1]
+
+        dx = nxt.x - cur.x
+        dy = nxt.y - cur.y
+        dist = math.hypot(dx, dy)
+        if dist < 1e-6:
+            continue
+
+        dx /= dist
+        dy /= dist
+
+        # si está más lejos que el deseado, acércate un poco
+        if dist > desired:
+            # no exceder el límite de conexión con su propio “prev” (si existe)
+            step_cap = max_step
+            prev = None
+            if i - 1 >= 0:
+                prev = robots_in_path[i - 1]
+            # si hay previo, evita que el movimiento rompa ese enlace
+            if prev is not None:
+                dist_prev = math.hypot(cur.x - prev.x, cur.y - prev.y)
+                slack_prev = connection_distance * 0.98 - dist_prev
+                if slack_prev <= 0:
+                    step_cap = 0.0
+                else:
+                    step_cap = min(step_cap, slack_prev)
+
+            # además, evita que al moverte hacia delante superes el límite con 'nxt'
+            # (aunque al acercarte reduces dist, por seguridad lo clamp-eamos)
+            over = dist - connection_distance
+            if over > 0:
+                step_cap = min(step_cap, over)
+
+            step = min(step_cap, follow_gain * ((dist - desired) / max(connection_distance, 1e-6)))
+            if step > 0:
+                cur.x += dx * step
+                cur.y += dy * step
 
 
 def main():
@@ -657,6 +748,7 @@ def main():
     best_demand, best_path_from_source, best_path_from_demand = choose_best_demand(
     source, demands, robots, connections
 )
+    
     debug_global_choice(source, demands, robots, connections, best_demand)
 
     print("\n--- DEBUGGING BEFORE REPULSION---")
@@ -779,12 +871,12 @@ def main():
     for d in demands:      
         d.draw(screen)
 
-
+    """
     # Draw obstacles and connection range
     for obstacle in obstacles:
         obstacle.draw(screen)
         pygame.draw.circle(screen, (255, 200, 200), (int(obstacle.x), int(obstacle.y)), 60, 1)
-
+    """
     # Draw all connections
     for a, b in connections:
         pygame.draw.line(screen, (210, 210, 210), (a.x, a.y), (b.x, b.y), 1)
@@ -798,20 +890,20 @@ def main():
     for i in range(len(best_path_from_demand) - 1):
         pygame.draw.line(screen, (0, 100, 255), (best_path_from_demand[i].x, best_path_from_demand[i].y),
                         (best_path_from_demand[i + 1].x, best_path_from_demand[i + 1].y), 3)
-
+    
     # Draw robots
     robots_in_path = {r for r in best_path_from_source if isinstance(r, Robot)}
     for robot in robots:
-
+        """
         if is_in_obstacle_range(robot, obstacles, 60):
 
             robot.draw(screen, color=(180, 80, 0))  # naranja para peligro
-            
-        #elif robot in robots_in_path:
+        """ 
+        if robot in robots_in_path:
             robot.draw(screen, color=(0, 200, 0))  # green
         else:
             robot.draw(screen, color=(0, 100, 255))  # blue
-        
+       
 
     pygame.display.flip()
     clock.tick(60)   # limita a ~60 FPS (pon 30 si quieres aún menos carga)
@@ -833,9 +925,10 @@ def main():
         source.draw(screen)
         for d in demands:
             d.draw(screen)
-
+        
         #obstacles 
         # Repulsion force (only visualization for now)
+        """
         for obstacle in obstacles:
             obstacle.draw(screen)
             pygame.draw.circle(screen, (255, 200, 200), (int(obstacle.x), int(obstacle.y)), 60, 1)
@@ -850,12 +943,12 @@ def main():
                     dy = robot.y - obstacle.y
                     dist = math.hypot(dx, dy)
                     if dist < 60:
-                        """"
+                        
                         if dist != 0:
                             dx /= dist
                             dy /= dist
 
-                        """
+                        
                         repel_strength = 1* (60 - dist) 
                         # Store original position
                         original_x, original_y = robot.x, robot.y
@@ -877,7 +970,23 @@ def main():
                         if not still_connected:
                             robot.x, robot.y = original_x, original_y
     
-            
+            """
+        # --- ZIP en cada frame ---
+        zip_step(
+            best_path_from_source,
+            best_demand,
+            CONNECTION_DISTANCE,
+            desired_ratio=0.88,  # 0.85-0.9; más alto = cadena más tensa
+            tail_gain=1.0,       # más alto = el tail avanza más
+            follow_gain=0.85,    # pegado de eslabones
+            max_step=3.0         # tope de px/frame
+        )
+
+        # Auto-engache si el tail ya alcanza la demanda
+        tail = next((n for n in reversed(best_path_from_source) if isinstance(n, Robot)), None)
+        if tail and distance(tail, best_demand) <= CONNECTION_DISTANCE:
+            connect(tail, best_demand, connections)
+
         # Recalculate connections based on new positions
         connections = []
         for i in range(len(robots)):
@@ -940,10 +1049,11 @@ def main():
             pygame.draw.circle(screen, (180, 180, 180), (int(robot.x), int(robot.y)), CONNECTION_DISTANCE, 1)
         
         """
+        
         for robot in robots:
-            if is_in_obstacle_range(robot, obstacles, 60):
-                robot.draw(screen, color=(180, 80, 0))  # naranja para peligro
-            elif robot in robots_in_path:
+            #if is_in_obstacle_range(robot, obstacles, 60):
+                #robot.draw(screen, color=(180, 80, 0))  # naranja para peligro
+            if robot in robots_in_path:
                 robot.draw(screen, color=(0, 200, 0))  # verde
             else:
                 robot.draw(screen, color=(0, 100, 255))  # azul
