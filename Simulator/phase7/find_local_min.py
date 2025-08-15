@@ -8,7 +8,7 @@ from class_source_and_demand import Source, Demand
 
 ARENA_WIDTH, ARENA_HEIGHT = 600, 300
 ROBOT_RADIUS = 5
-N_ROBOTS = 40
+N_ROBOTS = 8
 N_DEMANDS = 2
 CONNECTION_DISTANCE = 120
 
@@ -259,6 +259,66 @@ def debug_global_choice(source, demands, robots, connections, best_demand):
         mark = "  <= winner" if (best_demand and name == best_demand.name) else ""
         print(f"{name} | min_total: {min_total} | tie_len: {tie_len}{mark}")
 
+
+def compute_per_robot_scores(robots, demands):
+    """Calcula, para cada robot r:
+       r.total_by_demand[name] = S(r) + D_i(r)
+       r.best_total, r.best_demand_name
+    """
+    for r in robots:
+        r.total_by_demand = {}
+        # S(r)
+        s = getattr(r, 'hop_from_source', None)
+        for d in demands:
+            di = r.demand_hops.get(d.name, None) if hasattr(r, 'demand_hops') else None
+            if s is None or di is None:
+                r.total_by_demand[d.name] = None
+            else:
+                r.total_by_demand[d.name] = s + di
+
+        # mejor total y a qué demanda
+        pairs = [(dn, v) for dn, v in r.total_by_demand.items() if v is not None]
+        if pairs:
+            dn, v = min(pairs, key=lambda kv: kv[1])
+            r.best_demand_name = dn
+            r.best_total = v
+        else:
+            r.best_demand_name = None
+            r.best_total = None
+
+
+def get_graph_neighbors(node, connections):
+    """Vecinos de un nodo en el grafo de conexiones."""
+    neigh = []
+    for a, b in connections:
+        if a == node:
+            neigh.append(b)
+        elif b == node:
+            neigh.append(a)
+    return neigh
+
+
+def local_minima(robots, connections, strict=False):
+    """Devuelve el conjunto de robots que son mínimos locales en T*(r).
+       strict=False  -> <= (permite empates)
+       strict=True   -> <  (mínimo estrictamente menor)
+    """
+    mins = set()
+    for r in robots:
+        if r.best_total is None:
+            continue
+        neighs = [n for n in get_graph_neighbors(r, connections) if isinstance(n, Robot)]
+        if not neighs:  # aislado: por convenio lo consideramos mínimo local si tiene valor
+            mins.add(r)
+            continue
+        if strict:
+            ok = all((n.best_total is None) or (r.best_total < n.best_total) for n in neighs)
+        else:
+            ok = all((n.best_total is None) or (r.best_total <= n.best_total) for n in neighs)
+        if ok:
+            mins.add(r)
+    return mins
+
 def main():
     pygame.init()
     clock = pygame.time.Clock()
@@ -320,6 +380,11 @@ def main():
     best_demand, best_path_from_source, best_path_from_demand = choose_best_demand(
         source, demands, robots, connections
     )
+    # Ya elegiste la demanda “global” y tienes hops actualizados
+    compute_per_robot_scores(robots, demands)
+    mins_leq = local_minima(robots, connections, strict=False)  # mínimos locales con <=
+    mins_strict = local_minima(robots, connections, strict=True)  # opcional, estrictos
+
     debug_global_choice(source, demands, robots, connections, best_demand)
 
     print("\n--- DEBUGGING BEFORE MOVEMENT---")
@@ -345,6 +410,16 @@ def main():
         )
         print()
     print("------------------")
+    
+    print("\n--- LOCAL MINIMA DEBUG ---")
+    for r in robots:
+        totals_str = ", ".join(f"{dn}:{r.total_by_demand.get(dn)}" for dn in [d.name for d in demands])
+        tag = "MIN_local" if r in mins_leq else ""
+        print(f"R{r.robot_id:02d} S:{r.hop_from_source} | {totals_str} | "
+            f"Best({r.best_demand_name}={r.best_total}) {tag}")
+    print("Mínimos locales (<=):", sorted([r.robot_id for r in mins_leq]))
+    print("Mínimos locales estrictos (<):", sorted([r.robot_id for r in mins_strict]))
+
 
     # Initial draw (no obstacles)
     screen.fill((255, 255, 255))
@@ -364,11 +439,34 @@ def main():
                          (best_path_from_demand[i + 1].x, best_path_from_demand[i + 1].y), 3)
 
     robots_in_path = {r for r in best_path_from_source if isinstance(r, Robot)}
+    """
     for robot in robots:
         if robot in robots_in_path:
             robot.draw(screen, color=(0, 200, 0))  # green
         else:
             robot.draw(screen, color=(0, 100, 255))  # blue
+    """
+    for robot in robots:
+        # color base (como ya lo tenías)
+        base_color = (0, 200, 0) if robot in robots_in_path else (0, 100, 255)
+        robot.draw(screen, color=base_color)
+
+        # contorno dorado = mínimo local (<=)
+        if robot in mins_leq:
+            pygame.draw.circle(screen, (255, 215, 0), (int(robot.x), int(robot.y)), ROBOT_RADIUS + 6, 3)
+
+        # etiqueta corta con T*(r)
+        font = pygame.font.Font(None, 18)
+        txt = "∞" if robot.best_total is None else str(robot.best_total)
+        lbl = font.render(txt, True, (0, 0, 0))
+        screen.blit(lbl, (robot.x + 8, robot.y - 8))
+
+        # si quieres ver por-demanda: T1/T2
+        # dnames = [d.name for d in demands]
+        # t1 = robot.total_by_demand.get(dnames[0])
+        # t2 = robot.total_by_demand.get(dnames[1]) if len(dnames) > 1 else None
+        # lbl2 = font.render(f"{t1}/{t2}", True, (80,80,80))
+        # screen.blit(lbl2, (robot.x + 8, robot.y + 6))
 
     pygame.display.flip()
     clock.tick(60)
