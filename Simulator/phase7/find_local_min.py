@@ -319,6 +319,109 @@ def local_minima(robots, connections, strict=False):
             mins.add(r)
     return mins
 
+# === ZIP de una rama anclada en un pivote (primero en la lista) ===
+def y_step(branch_nodes, target_node, connection_distance,
+           desired_ratio=0.85, tail_gain=1.0, follow_gain=0.8, max_step=2.0):
+    """
+    branch_nodes: [pivot(Node|Robot), r1(Robot), r2(Robot), ..., tail(Robot)]
+    Mueve el tail hacia target_node y el resto sigue cerrando la cadena.
+    El pivot (primer elemento) NO se mueve.
+    """
+    robots_in_branch = [n for n in branch_nodes if isinstance(n, Robot)]
+    if not robots_in_branch:
+        return
+
+    tail = robots_in_branch[-1]
+    # --- 1) tail hacia la demanda ---
+    dx = target_node.x - tail.x
+    dy = target_node.y - tail.y
+    dist_d = math.hypot(dx, dy)
+    if dist_d > 1e-6:
+        dx /= dist_d
+        dy /= dist_d
+
+        # cuida no romper el enlace con su anterior (si existe) o con el pivot
+        prev = robots_in_branch[-2] if len(robots_in_branch) >= 2 else branch_nodes[0]
+        dist_prev = math.hypot(tail.x - prev.x, tail.y - prev.y)
+        slack = connection_distance * 0.98 - dist_prev
+        step_cap = 0.0 if slack <= 0 else min(max_step, slack)
+        step = min(step_cap, tail_gain * (dist_d / max(connection_distance, 1e-6)))
+        if step > 0:
+            tail.x += dx * step
+            tail.y += dy * step
+
+    # --- 2) seguir al sucesor desde atrás hacia el pivot ---
+    desired = desired_ratio * connection_distance
+    # robots_in_branch: ... r[i] -> r[i+1] ... pivot no se mueve
+    for i in range(len(robots_in_branch) - 2, -1, -1):
+        cur = robots_in_branch[i]
+        nxt = robots_in_branch[i + 1] if i + 1 < len(robots_in_branch) else None
+        anchor = branch_nodes[0] if i == 0 else robots_in_branch[i - 1]  # para no romper con su "anterior"
+
+        # seguir al sucesor
+        dx = (nxt.x - cur.x)
+        dy = (nxt.y - cur.y)
+        dist = math.hypot(dx, dy)
+        if dist > 1e-6:
+            dx /= dist; dy /= dist
+
+        if dist > desired:
+            # no romper enlace con el "anterior"
+            dist_prev = math.hypot(cur.x - anchor.x, cur.y - anchor.y)
+            slack_prev = connection_distance * 0.98 - dist_prev
+            step_cap = 0.0 if slack_prev <= 0 else min(max_step, slack_prev)
+
+            # seguridad extra (aunque te acercas, no pases el límite con nxt)
+            over = dist - connection_distance
+            if over > 0:
+                step_cap = min(step_cap, over)
+
+            step = min(step_cap, follow_gain * ((dist - desired) / max(connection_distance, 1e-6)))
+            if step > 0:
+                cur.x += dx * step
+                cur.y += dy * step
+
+
+# === Elegir pivote (mínimo local en el camino) y preparar las dos ramas ===
+def compute_y_split(source, demands, robots, connections, best_demand, best_path_from_source):
+    # otra demanda (la que no ganó)
+    other_demand = next(d for d in demands if d != best_demand) if len(demands) > 1 else best_demand
+
+    # robots del camino Source->best_demand
+    path_robots = [n for n in best_path_from_source if isinstance(n, Robot)]
+
+    # candidatos a pivote: mínimos locales ∩ robots del camino
+    mins = local_minima(robots, connections, strict=False)
+    cand = [r for r in path_robots if r in mins]
+
+    if cand:
+        # toma el que esté más “adelante” en el camino (hacia la demanda)
+        pivot = cand[-1]
+    else:
+        # si no hay, usa el central del camino como pivote
+        pivot = path_robots[len(path_robots)//2] if path_robots else None
+
+    # TRONCO: Source -> ... -> pivot (para dibujar)
+    trunk = []
+    if pivot:
+        for n in best_path_from_source:
+            trunk.append(n)
+            if n == pivot:
+                break
+
+    # RAMA A (ya alineada hacia la best_demand): pivot -> ... (los robots posteriores del camino)
+    branchA = [pivot] + [n for n in best_path_from_source[best_path_from_source.index(pivot)+1:]
+                         if isinstance(n, Robot)]
+
+    # RAMA B (nueva): usa robots libres más cercanos al pivote
+    free = [r for r in robots if r not in best_path_from_source and r != pivot]
+    free.sort(key=lambda r: distance(r, pivot) if pivot else 1e9)
+    # tamaño parecido a la otra rama
+    k = max(2, len(branchA)) - 1
+    branchB = [pivot] + free[:k]
+
+    return pivot, trunk, branchA, branchB, best_demand, other_demand
+
 def main():
     pygame.init()
     clock = pygame.time.Clock()
@@ -383,7 +486,12 @@ def main():
     # Ya elegiste la demanda “global” y tienes hops actualizados
     compute_per_robot_scores(robots, demands)
     mins_leq = local_minima(robots, connections, strict=False)  # mínimos locales con <=
-    mins_strict = local_minima(robots, connections, strict=True)  # opcional, estrictos
+    #mins_strict = local_minima(robots, connections, strict=True)  # opcional, estrictos
+    # === preparar la Y (V -> Y) ===
+    pivot, trunk, branchA, branchB, demandA, demandB = compute_y_split(
+        source, demands, robots, connections, best_demand, best_path_from_source
+    )
+
 
     debug_global_choice(source, demands, robots, connections, best_demand)
 
@@ -418,7 +526,7 @@ def main():
         print(f"R{r.robot_id:02d} S:{r.hop_from_source} | {totals_str} | "
             f"Best({r.best_demand_name}={r.best_total}) {tag}")
     print("Mínimos locales (<=):", sorted([r.robot_id for r in mins_leq]))
-    print("Mínimos locales estrictos (<):", sorted([r.robot_id for r in mins_strict]))
+    #print("Mínimos locales estrictos (<):", sorted([r.robot_id for r in mins_strict]))
 
 
     # Initial draw (no obstacles)
@@ -454,13 +562,13 @@ def main():
         # contorno dorado = mínimo local (<=)
         if robot in mins_leq:
             pygame.draw.circle(screen, (255, 215, 0), (int(robot.x), int(robot.y)), ROBOT_RADIUS + 6, 3)
-
+        """
         # etiqueta corta con T*(r)
         font = pygame.font.Font(None, 18)
         txt = "∞" if robot.best_total is None else str(robot.best_total)
         lbl = font.render(txt, True, (0, 0, 0))
         screen.blit(lbl, (robot.x + 8, robot.y - 8))
-
+        """
         # si quieres ver por-demanda: T1/T2
         # dnames = [d.name for d in demands]
         # t1 = robot.total_by_demand.get(dnames[0])
@@ -470,10 +578,13 @@ def main():
 
     pygame.display.flip()
     clock.tick(60)
-
+    
     # WAIT FOR KEY PRESS BEFORE CONTINUING (kept, but no obstacle forces will run)
+    
     waiting = True
-    print("\nPress any key to continue...\n")
+
+    #print("\nPress any key to continue...\n")
+    
     while waiting:
         for event in pygame.event.get():
             if event.type == pygame.KEYDOWN:
@@ -481,7 +592,7 @@ def main():
             elif event.type == pygame.QUIT:
                 pygame.quit()
                 return
-
+    
     # Main loop (no obstacle physics)
     running = True
     while running:
@@ -489,6 +600,12 @@ def main():
         source.draw(screen)
         for d in demands:
             d.draw(screen)
+        # === animación: dos ramas zipper desde el pivote a las dos demandas ===
+        if pivot:
+            y_step(branchA, demandA, CONNECTION_DISTANCE,
+                desired_ratio=0.85, tail_gain=1.0, follow_gain=0.85, max_step=2.5)
+            y_step(branchB, demandB, CONNECTION_DISTANCE,
+                desired_ratio=0.85, tail_gain=1.0, follow_gain=0.85, max_step=2.5)
 
         # Recompute connections in case you later add movement
         connections = []
@@ -514,7 +631,41 @@ def main():
 
         for a, b in connections:
             pygame.draw.line(screen, (210, 210, 210), (a.x, a.y), (b.x, b.y), 1)
+        
+        # TRONCO (Source -> pivot)
+        for i in range(len(trunk) - 1):
+            pygame.draw.line(screen, (50, 50, 50), (trunk[i].x, trunk[i].y), (trunk[i+1].x, trunk[i+1].y), 3)
 
+        # RAMA A hacia demandA (naranja)
+        seqA = [branchA[0]] + [r for r in branchA[1:] if isinstance(r, Robot)]
+        for i in range(len(seqA) - 1):
+            pygame.draw.line(screen, (255, 140, 0), (seqA[i].x, seqA[i].y), (seqA[i+1].x, seqA[i+1].y), 3)
+        # cierre a la demanda
+        if pivot and distance(seqA[-1], demandA) <= CONNECTION_DISTANCE:
+            pygame.draw.line(screen, (255, 140, 0), (seqA[-1].x, seqA[-1].y), (demandA.x, demandA.y), 3)
+
+        # RAMA B hacia demandB (azul)
+        seqB = [branchB[0]] + [r for r in branchB[1:] if isinstance(r, Robot)]
+        for i in range(len(seqB) - 1):
+            pygame.draw.line(screen, (0, 100, 255), (seqB[i].x, seqB[i].y), (seqB[i+1].x, seqB[i+1].y), 3)
+        if pivot and distance(seqB[-1], demandB) <= CONNECTION_DISTANCE:
+            pygame.draw.line(screen, (0, 100, 255), (seqB[-1].x, seqB[-1].y), (demandB.x, demandB.y), 3)
+
+        # Colores de robots: tronco = gris oscuro, rama A = naranja, rama B = azul, otros = gris claro
+        set_trunk = {n for n in trunk if isinstance(n, Robot)}
+        set_A = {n for n in branchA if isinstance(n, Robot)}
+        set_B = {n for n in branchB if isinstance(n, Robot)}
+
+        for r in robots:
+            if r in set_A:
+                r.draw(screen, color=(255, 140, 0))
+            elif r in set_B:
+                r.draw(screen, color=(0, 100, 255))
+            elif r in set_trunk:
+                r.draw(screen, color=(70, 70, 70))
+            else:
+                r.draw(screen, color=(160, 160, 160))
+        """
         for i in range(len(best_path_from_source) - 1):
             pygame.draw.line(screen, (255, 0, 0), (best_path_from_source[i].x, best_path_from_source[i].y),
                              (best_path_from_source[i + 1].x, best_path_from_source[i + 1].y), 3)
@@ -528,7 +679,7 @@ def main():
                 robot.draw(screen, color=(0, 200, 0))
             else:
                 robot.draw(screen, color=(0, 100, 255))
-
+        """
         pygame.display.flip()
 
     print("\n>>> Final Best Path Source ➔ Demand:")
