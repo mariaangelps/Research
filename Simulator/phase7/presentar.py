@@ -8,7 +8,7 @@ from class_source_and_demand import Source, Demand
 
 ARENA_WIDTH, ARENA_HEIGHT = 600, 300
 ROBOT_RADIUS = 5
-N_ROBOTS = 7
+N_ROBOTS = 40
 N_DEMANDS = 2
 CONNECTION_DISTANCE = 120
 
@@ -157,8 +157,8 @@ def build_optimal_path(start, end, robots, connections, hop_attr):
     path = []
     visited = set()
     current = start
-    current_hop = 0 if not isinstance(start, Robot) else getattr(start, hop_attr)
-
+    #current_hop = 0 if not isinstance(start, Robot) else getattr(start, hop_attr)
+    current_hop = 0
     while current != end:
         visited.add(current)
         if isinstance(end, Node) and distance(current, end) <= CONNECTION_DISTANCE:
@@ -173,9 +173,12 @@ def build_optimal_path(start, end, robots, connections, hop_attr):
                 continue
             if getattr(r, hop_attr) == current_hop + 1:
                 if existe_ruta_fisica(current, r, connections):
-                    sh = getattr(r, 'hop_from_source') or float('inf')
-                    dh = getattr(r, 'hop_from_demand') or float('inf')
+                    # Safely get hop count attributes (or assign large penalty if undefined)
+                    sh = getattr(r, 'hop_from_source', float('inf'))
+                    dh = getattr(r, 'hop_from_demand', float('inf'))
                     candidates.append((sh + dh, r))
+
+                    
 
         if not candidates:
             break
@@ -202,7 +205,8 @@ def build_path_after_repulsion(start, end, robots, connections, hop_attr):
     path = []
     visited = set()
     current = start
-    current_hop = 0 if not isinstance(start, Robot) else getattr(start, hop_attr)
+    #current_hop = 0 if not isinstance(start, Robot) else getattr(start, hop_attr)
+    current_hop = 0
 
     while current != end:
         visited.add(current)
@@ -343,6 +347,22 @@ def choose_pivot_robot(robots):
     # Puedes afinar el desempate con “grado” si lo calculas; por ahora, sólo total.
     return min(candidates, key=lambda r: r.total_overall)
 
+def get_connected_component(start, connections):
+    seen = set()
+    q = deque([start])
+    seen.add(start)
+    while q:
+        cur = q.popleft()
+        for a, b in connections:
+            neighbor = None
+            if a == cur and b not in seen:
+                neighbor = b
+            elif b == cur and a not in seen:
+                neighbor = a
+            if neighbor:
+                seen.add(neighbor)
+                q.append(neighbor)
+    return seen
 def main():
     pygame.init()
     clock = pygame.time.Clock()
@@ -379,7 +399,8 @@ def main():
                 if distance(robot, d) <= CONNECTION_DISTANCE:
                     connect(robot, d, connections)
 
-            connected = is_path_exists(source, demands, robots, connections)
+            connected_nodes = get_connected_component(source, connections)
+            connected = all(d in connected_nodes for d in demands)  
             compute_all_hops_and_totals(source, demands, robots, connections)
             print_hop_table(robots, [d.name for d in demands])
             pivot = choose_pivot_robot(robots)
@@ -410,9 +431,19 @@ def main():
         direct_from_d = [r.robot_id for r in robots if distance(d, r) <= CONNECTION_DISTANCE]
         print(f"{d.name} can directly connect to robots: {direct_from_d}")
 
-    best_demand, best_path_from_source, best_path_from_demand = choose_best_demand(
-        source, demands, robots, connections
-    )
+    pivot = choose_pivot_robot(robots)
+    if pivot:
+        print(f"\n>>> PIVOT ROBOT (mínimo total overall): Robot {pivot.robot_id} con total={pivot.total_overall}")
+        # Build source to pivot path
+        path_source_to_pivot = build_optimal_path(source, pivot, robots, connections, 'hop_from_source')
+        # Build pivot to all demands
+        demand_paths = []
+        for d in demands:
+            path = build_optimal_path(pivot, d, robots, connections, 'hop_from_demand')
+            demand_paths.append((d.name, path))
+    else:
+        print("\n>>> No hay pivot (al menos un hop es inaccesible).")
+
     debug_global_choice(source, demands, robots, connections, best_demand)
 
     print("\n--- DEBUGGING BEFORE MOVEMENT---")
