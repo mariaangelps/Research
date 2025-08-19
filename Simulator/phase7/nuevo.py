@@ -4,15 +4,15 @@ import math
 from collections import deque
 from class_robot import Robot
 from class_source_and_demand import Source, Demand
-# from class_obs import Obstacle  # ❌ removed
+# from class_obs import Obstacle  
 
 ARENA_WIDTH, ARENA_HEIGHT = 600, 300
-ROBOT_RADIUS = 5
-N_ROBOTS = 7
+ROBOT_RADIUS = 2
+N_ROBOTS = 120
 N_DEMANDS = 2
-CONNECTION_DISTANCE = 120
+CONNECTION_DISTANCE = 60
 
-# ❌ obstacles removed entirely
+# obstacles removed entirely
 obstacles = []  # keep empty so nothing references it
 
 class Node:
