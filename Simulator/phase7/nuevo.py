@@ -93,19 +93,17 @@ def propagate_local_hop_count(source, robots, connections, attr_hop, attr_parent
                 queue.append((neighbor, hops + 1, current))
 
 def is_path_exists(source, demands, robots, connections):
-    dem_set = set(demands)
-    visited = set()
+    """True si desde el source se puede alcanzar TODAS las demands por las conexiones."""
+    visited = set([source])
     queue = [source]
     while queue:
-        current = queue.pop(0)
-        if current == dem_set:
-            return True
-        visited.add(current)
+        cur = queue.pop(0)
         for a, b in connections:
-            neighbor = b if a == current else a if b == current else None
-            if neighbor and neighbor not in visited:
-                queue.append(neighbor)
-    return False
+            nb = b if a == cur else a if b == cur else None
+            if nb and nb not in visited:
+                visited.add(nb)
+                queue.append(nb)
+    return all(d in visited for d in demands)
 
 #function to verify if there is a direct path 
 def existe_ruta_fisica(a, b, conexiones_fisicas):
@@ -411,29 +409,26 @@ def build_optimal_path(start, end, robots, connections, hop_attr):
 def compute_multi_demand_hops(demands, robots, connections):
     """
     Para cada robot:
-      - hop_from_demand := hop mínimo hacia cualquiera de las demands
-      - nearest_demand  := la demand que produce ese mínimo
-    Usa exclusivamente el grafo 'connections' (edges existentes).
+      - r.hops_to_demand[d] = hop específico hacia d
+      - r.hop_from_demand   = min_d r.hops_to_demand[d]      (para debug/global)
+      - r.nearest_demand    = argmin_d r.hops_to_demand[d]
     """
     for r in robots:
+        r.hops_to_demand = {}   # <- mapa específico
         r.hop_from_demand = None
         r.nearest_demand = None
 
     for d in demands:
-        # BFS desde esta demand 'd' sobre el grafo de conexiones
         hop = {d: 0}
         visited = set([d])
         q = deque([d])
 
         while q:
             cur = q.popleft()
-
-            # vecinos por edges existentes (nodo-robot / robot-robot / nodo-nodo si los hubiera)
             vecinos = (
                 [r2 for (r1, r2) in connections if r1 == cur] +
                 [r1 for (r1, r2) in connections if r2 == cur]
             )
-
             for nb in vecinos:
                 if nb in visited:
                     continue
@@ -441,49 +436,113 @@ def compute_multi_demand_hops(demands, robots, connections):
                 hop[nb] = hop[cur] + 1
                 q.append(nb)
 
-        # fusiona el hop de esta demand con el mínimo global por robot
+        # guardar hop específico hacia d
         for r in robots:
             if r in hop:
-                if r.hop_from_demand is None or hop[r] < r.hop_from_demand:
-                    r.hop_from_demand = hop[r]
-                    r.nearest_demand = d
+                r.hops_to_demand[d] = hop[r]
+
+    # derivar min global (opcional, para prints)
+    for r in robots:
+        if r.hops_to_demand:
+            dmin, vmin = min(r.hops_to_demand.items(), key=lambda kv: kv[1])
+            r.hop_from_demand = vmin
+            r.nearest_demand = dmin
+        else:
+            r.hop_from_demand = None
+            r.nearest_demand = None
 def build_network_for_demands(demands, source, robots, connections):
     """
-    Devuelve una lista de rutas (cada ruta es una lista de nodos),
-    cuya unión cubre todas las demands.
+    Devuelve una lista de rutas (una por demand target),
+    usando hops específicos al target, no el mínimo global.
     """
-    # Asegúrate de haber corrido compute_multi_demand_hops(demands, robots) antes
     uncovered = set(demands)
     network_paths = []
 
-    while uncovered:
-        # elige la demand “más fácil” desde el source, medida por hops vía robots
-        # (si ya tienes hop_from_source en robots, úsalo para el costo)
-        def cost_to(d):
-            # costo simple: min_r (r.hop_from_source + hop_d(r))
-            best = float('inf')
-            for r in robots:
-                hs = getattr(r, 'hop_from_source', None)
-                # hop desde r a ESTA demand d (no el min global)
-                # si quieres exactitud por demand específica:
-                # aquí puedes calcular un hop puntual sólo para d (opcional)
-                hd = getattr(r, 'hop_from_demand', None) if r.nearest_demand == d else None
-                if hs is None or hd is None:
-                    continue
-                best = min(best, hs + hd)
-            return best
+    def cost_to(d):
+        # costo: min_r (hop_source(r) + hop_especifico_d(r))
+        best = float('inf')
+        for r in robots:
+            hs = getattr(r, 'hop_from_source', None)
+            hd = r.hops_to_demand.get(d, None) if hasattr(r, 'hops_to_demand') else None
+            if hs is None or hd is None:
+                continue
+            best = min(best, hs + hd)
+        return best
 
+    while uncovered:
         target = min(uncovered, key=cost_to)
 
-        # usa TU función existente, sin romper su firma
-        path = build_optimal_path(source, target, robots, connections, 'hop_from_demand')
+        # preparar atributo temporal con hops hacia 'target'
+        for r in robots:
+            r.hop_to_target = r.hops_to_demand.get(target, None) if hasattr(r, 'hops_to_demand') else None
+
+        # ahora el gradient dentro de build_optimal_path apunta a 'target'
+        path = build_optimal_path(source, target, robots, connections, 'hop_to_target')
+
         if path and len(path) >= 2:
             network_paths.append(path)
             uncovered.remove(target)
         else:
-            # si no se pudo, por ejemplo por desconexión temporal,
-            # evitamos bucle infinito
+            # si no hay ruta para esta demand, salimos para no ciclar
             break
+
+    # (opcional) limpiar el atributo temporal
+    for r in robots:
+        if hasattr(r, 'hop_to_target'):
+            delattr(r, 'hop_to_target')
+
+    return network_paths
+def choose_branch_robot(demands, robots):
+    """
+    Elige el robot que minimiza: hop_from_source(r) + sum_d hops_to_demand[d](r)
+    (Requiere que ya estén calculados hop_from_source y hops_to_demand)
+    """
+    best = None
+    best_cost = float('inf')
+    for r in robots:
+        hs = getattr(r, 'hop_from_source', None)
+        if hs is None:
+            continue
+        # deben existir hops específicos a cada demand
+        if not hasattr(r, 'hops_to_demand'):
+            continue
+        ok = all(d in r.hops_to_demand for d in demands)
+        if not ok:
+            continue
+        cost = hs + sum(r.hops_to_demand[d] for d in demands)
+        if cost < best_cost:
+            best_cost = cost
+            best = r
+    return best
+def build_shared_trunk_network(demands, source, robots, connections):
+    """
+    Devuelve una lista de rutas: [ tronco+rama(D1), tronco+rama(D2), ... ]
+    donde el tronco Source→branch se comparte.
+    """
+    branch = choose_branch_robot(demands, robots)
+    if branch is None:
+        return []  # no hay punto que conecte todo
+
+    # --- Tronco: Source -> branch (end es Robot)
+    trunk = build_optimal_path(source, branch, robots, connections, 'hop_from_source')
+
+    network_paths = []
+    for d in demands:
+        # preparar gradiente específico al target d
+        for r in robots:
+            r.hop_to_target = r.hops_to_demand.get(d, None) if hasattr(r, 'hops_to_demand') else None
+
+        # --- Rama: branch -> d (start = Robot, end = Node)
+        limb = build_optimal_path(branch, d, robots, connections, 'hop_to_target')
+
+        # unir tronco + rama (evitar duplicar el branch)
+        full_path = list(trunk) + limb  # limb no incluye el start Robot explícitamente
+        network_paths.append(full_path)
+
+    # limpiar atributo temporal
+    for r in robots:
+        if hasattr(r, 'hop_to_target'):
+            delattr(r, 'hop_to_target')
 
     return network_paths
 
@@ -644,7 +703,7 @@ def main():
     propagate_local_hop_count(source, robots, connections, 'hop_from_source', 'parent_from_source')
     compute_multi_demand_hops(demands, robots, connections)
         # Red (múltiples caminos, uno por demand)
-    network_paths = build_network_for_demands(demands, source, robots, connections)
+    network_paths = build_shared_trunk_network(demands, source, robots, connections)
 
     # (opcional) set de aristas si quieres usarlas luego
     network_edges = set()
@@ -660,9 +719,10 @@ def main():
         print(f"Robot {r.robot_id} | SourceHop: {r.hop_from_source} | DemandHop: {r.hop_from_demand} | TotalHop: {total_hops}")
     print("------------------")
 
+    """
     best_path_from_source = build_optimal_path(source, demands, robots, connections, 'hop_from_source')
     best_path_from_demand = build_optimal_path(demands, source, robots, connections, 'hop_from_demand') 
-
+    
 
     fixed_connections = set()
     for i in range(len(best_path_from_source) - 1):
@@ -692,7 +752,7 @@ def main():
 
 
             
-    
+    """
 
 
 
@@ -709,13 +769,13 @@ def main():
             print(f"SIN conexión física entre {get_node_name(a)} y {get_node_name(b)}")
     """
 
-
+    """
     print("\n>>> Best Path Source ➔ Demand:")
     print([get_node_name(r) for r in best_path_from_source])
 
     print("\n>>> Best Path Demand ➔ Source :")
     print([get_node_name(r) for r in best_path_from_demand])
-
+    """
     """
     print("\n>>> Robots in ORANGE Path (Source ➔ Demand):")
     orange_path_src = [f"R{n.robot_id}" for n in best_path_from_source if isinstance(n, Robot)]
@@ -743,18 +803,14 @@ def main():
     for a, b in connections:
         pygame.draw.line(screen, (210, 210, 210), (a.x, a.y), (b.x, b.y), 1)
 
-    # Draw path from source
-    for i in range(len(best_path_from_source) - 1):
-        pygame.draw.line(screen, (255, 0, 0), (best_path_from_source[i].x, best_path_from_source[i].y),
-                        (best_path_from_source[i + 1].x, best_path_from_source[i + 1].y), 3)
+    for path in network_paths:
+        for i in range(len(path) - 1):
+            pygame.draw.line(screen, (255, 0, 0), (path[i].x, path[i].y),
+                            (path[i + 1].x, path[i + 1].y), 3)
 
-    # Draw path from demand
-    for i in range(len(best_path_from_demand) - 1):
-        pygame.draw.line(screen, (0, 100, 255), (best_path_from_demand[i].x, best_path_from_demand[i].y),
-                        (best_path_from_demand[i + 1].x, best_path_from_demand[i + 1].y), 3)
 
     # Draw robots
-    robots_in_path = {r for r in best_path_from_source if isinstance(r, Robot)}
+    robots_in_path = {n for p in network_paths for n in p if isinstance(n, Robot)}
     for robot in robots:
         """
         if is_in_obstacle_range(robot, obstacles, 60):
@@ -849,7 +905,7 @@ def main():
         best_path_from_demand = build_path_after_repulsion(demands, source, robots, connections, 'hop_from_demand')
         """
         # Red (múltiples caminos, uno por demand)
-        network_paths = build_network_for_demands(demands, source, robots, connections)
+        network_paths = build_shared_trunk_network(demands, source, robots, connections)
 
         # (opcional) set de aristas si quieres usarlas luego
         network_edges = set()
@@ -866,10 +922,11 @@ def main():
         for a, b in connections:
             pygame.draw.line(screen, (210, 210, 210), (a.x, a.y), (b.x, b.y), 1)
 
-        for i in range(len(best_path_from_source) - 1):
-            pygame.draw.line(screen, (255, 0, 0), (best_path_from_source[i].x, best_path_from_source[i].y),
-                             (best_path_from_source[i + 1].x, best_path_from_source[i + 1].y), 3)
-        
+        for path in network_paths:
+            for i in range(len(path) - 1):
+                pygame.draw.line(screen, (255, 0, 0), (path[i].x, path[i].y),
+                                (path[i + 1].x, path[i + 1].y), 3)
+
         # Draw fixed optimal connections (in orange)
         """
         for (r1, r2) in fixed_connections:
@@ -883,7 +940,7 @@ def main():
                                 (path[i + 1].x, path[i + 1].y), 3)
 
         # Create a set of robots in the optimal path for quick lookup
-        robots_in_path = {r for r in best_path_from_source if isinstance(r, Robot)}
+        robots_in_path = {n for p in network_paths for n in p if isinstance(n, Robot)}
 
         
 
@@ -931,11 +988,12 @@ def main():
                       else None)
         print(f"Robot {r.robot_id} | SourceHop: {r.hop_from_source} | DemandHop: {r.hop_from_demand} | TotalHop: {total_hops}")
 
+    """
     print("\n>>> Final Best Path Source ➔ Demand (After Repulsion):")
     print([get_node_name(r) for r in best_path_from_source])
     print("\n>>> Final Best Path Demand ➔ Source (After Repulsion):")
-    print([get_node_name(r) for r in best_path_from_demand])
-    
+   # print([get_node_name(r) for r in best_path_from_demand])
+    """
     pygame.quit()
     
 
