@@ -6,9 +6,9 @@ from class_robot import Robot
 from class_source_and_demand import Source, Demand
 # from class_obs import Obstacle  
 
-ARENA_WIDTH, ARENA_HEIGHT = 600, 300
-ROBOT_RADIUS = 2
-N_ROBOTS = 120
+ARENA_WIDTH, ARENA_HEIGHT = 600,300
+ROBOT_RADIUS = 5
+N_ROBOTS = 80
 N_DEMANDS = 2
 CONNECTION_DISTANCE = 60
 
@@ -296,11 +296,7 @@ def debug_global_choice(source, demands, robots, connections, best_demand):
             min_total = float('inf')
         rows.append((d.name, min_total, tie_len, None))
 
-    winner = min(rows, key=lambda x: (x[1], x[2])) if rows else None
-    print("\n--- WHY THIS DEMAND WON (GLOBAL) ---")
-    for name, min_total, tie_len, bridger in rows:
-        mark = "  <= winner" if (best_demand and name == best_demand.name) else ""
-        print(f"{name} | min_total: {min_total} | tie_len: {tie_len}{mark}")
+    
         
 def bfs_hops_from(start_node, robots, connections):
     """Devuelve dict {robot: hops} desde start_node a cada robot alcanzable."""
@@ -374,89 +370,191 @@ def choose_pivot_robot(robots):
         return None
     # Puedes afinar el desempate con “grado” si lo calculas; por ahora, sólo total.
     return min(candidates, key=lambda r: r.total_overall)
+from collections import defaultdict
+
+def build_connections_fast(robots, source, demands, r):
+    """Build edges using a spatial hash grid: O(n)–ish instead of O(n^2)."""
+    cell = r  # cell size = connection distance
+    grid = defaultdict(list)
+
+    # put robots in grid
+    for i, rb in enumerate(robots):
+        cx, cy = int(rb.x // cell), int(rb.y // cell)
+        grid[(cx, cy)].append(i)
+
+    connections = []
+
+    # robot-robot edges (only check 3x3 neighbor cells)
+    n = len(robots)
+    for (cx, cy), idxs in grid.items():
+        neigh_cells = [(cx+dx, cy+dy) for dx in (-1, 0, 1) for dy in (-1, 0, 1)]
+        cand_idxs = []
+        for nc in neigh_cells:
+            cand_idxs.extend(grid.get(nc, []))
+        cand_set = set(cand_idxs)
+
+        for i in idxs:
+            ri = robots[i]
+            # only j > i to avoid dup checking
+            for j in cand_set:
+                if j <= i:
+                    continue
+                rj = robots[j]
+                if (ri.x - rj.x)**2 + (ri.y - rj.y)**2 <= r*r:
+                    connections.append((ri, rj))
+
+    # robot-source edges
+    for rb in robots:
+        if (rb.x - source.x)**2 + (rb.y - source.y)**2 <= r*r:
+            connections.append((rb, source))
+
+    # robot-demand edges
+    for d in demands:
+        for rb in robots:
+            if (rb.x - d.x)**2 + (rb.y - d.y)**2 <= r*r:
+                connections.append((rb, d))
+
+    return connections
+
+def dump_hop_table_once(robots, demand_names, max_rows=None, save_path=None):
+    """
+    Prints the hop table once (optionally only first N rows) and/or saves full table to a file.
+    """
+    lines = []
+    header = "Robot | Src | " + " | ".join([f"{dn}" for dn in demand_names]) + " | Total"
+    sep = "-" * len(header)
+    lines.append("\n--- HOP TABLE (Source & Demands & Total Overall) ---")
+    lines.append(header)
+    lines.append(sep)
+    for r in robots:
+        dhops = [str(r.demand_hops.get(dn)) for dn in demand_names]
+        total = str(r.total_overall) if r.total_overall is not None else "∞"
+        lines.append(f"{r.robot_id:>5} | {str(r.hop_from_source):>3} | " +
+                     " | ".join([f"{x:>3}" for x in dhops]) + f" | {total}")
+
+    # Print (maybe truncated)
+    to_print = lines
+    if max_rows is not None:
+        # keep header + first max_rows robot lines
+        head = lines[:3]
+        body = lines[3:3+max_rows]
+        tail = []
+        if len(lines) > 3 + max_rows:
+            tail = [f"... ({len(lines) - 3 - max_rows} more rows not shown)"]
+        to_print = head + body + tail
+
+    print("\n".join(to_print))
+
+    # Save full table if requested
+    if save_path:
+        try:
+            with open(save_path, "w", encoding="utf-8") as f:
+                f.write("\n".join(lines) + "\n")
+            print(f"\n[hop table saved to {save_path}]")
+        except Exception as e:
+            print(f"[warn] could not save hop table to {save_path}: {e}")
+def robot_neighbors(rb, connections):
+    """Return the set of robot neighbors directly connected to rb."""
+    neigh = set()
+    for a, b in connections:
+        if a is rb and isinstance(b, Robot):
+            neigh.add(b)
+        elif b is rb and isinstance(a, Robot):
+            neigh.add(a)
+    return neigh
+
+def robot_metric(rb, metric="total"):
+    """
+    Metric selector:
+        - "total": r.total_overall (sum of source + all demands hops)  [DEFAULT]
+        - "source": r.hop_from_source
+        - "max_demand": max over demands, useful for balancing
+    Returns None if undefined.
+    """
+    if metric == "total":
+        return getattr(rb, "total_overall", None)
+    elif metric == "source":
+        return getattr(rb, "hop_from_source", None)
+    elif metric == "max_demand":
+        if not hasattr(rb, "demand_hops") or not rb.demand_hops:
+            return None
+        vals = [v for v in rb.demand_hops.values() if v is not None]
+        return max(vals) if vals else None
+    else:
+        return getattr(rb, "total_overall", None)  # fallback
+
+def is_local_minimum(rb, connections, metric="total"):
+    """
+    True if rb's metric is strictly less than all neighbor robots' metrics.
+    If rb.metric is None, returns False.
+    If neighbor has None metric, that neighbor is ignored.
+    """
+    mv = robot_metric(rb, metric)
+    if mv is None:
+        return False
+    for nb in robot_neighbors(rb, connections):
+        nv = robot_metric(nb, metric)
+        if nv is None:
+            continue
+        if mv > nv:  # must be strictly smaller than every neighbor
+            return False
+    return True
+
+def find_local_minima(robots, connections, metric="total"):
+    """Return a list of robots that are local minima under the chosen metric."""
+    return [r for r in robots if is_local_minimum(r, connections, metric=metric)]
 
 def main():
     pygame.init()
     clock = pygame.time.Clock()
     screen = pygame.display.set_mode((ARENA_WIDTH, ARENA_HEIGHT))
-    pygame.display.set_caption("Hop Count - Joint Network to D1 & D2 (No Obstacles)")
+    pygame.display.set_caption("Fast joint network (Source ↔ Pivot ↔ Demands)")
 
-    # Nodos fijos
+    # ---- Nodes ----
     source = Node("Source", 50, ARENA_HEIGHT // 2, (255, 0, 0))
-    demands = []
-    for i in range(N_DEMANDS):
-        y_pos = 30 + i * ((ARENA_HEIGHT - 60) / (N_DEMANDS - 1))
-        demands.append(Node(f"D{i+1}", ARENA_WIDTH - 50, int(y_pos), (0, 128, 0)))
+    demands = [Node("D1", ARENA_WIDTH - 50, 50, (0, 128, 0)),
+               Node("D2", ARENA_WIDTH - 50, ARENA_HEIGHT - 50, (0, 128, 0))]
 
-    # ---------- Construcción de un grafo que conecte Source con TODAS las Demands ----------
-    connected = False
-    attempts = 0
-    while not connected:
+    # ---- Robots (random once) ----
+    robots = []
+    for i in range(N_ROBOTS):
+        x = random.randint(80, ARENA_WIDTH - 80)
+        y = random.randint(60, ARENA_HEIGHT - 60)
+        robots.append(Robot(i, x, y, ROBOT_RADIUS))
+
+    # ---- Build connections ONCE (fast) ----
+    connections = build_connections_fast(robots, source, demands, CONNECTION_DISTANCE)
+
+    # If graph doesn’t connect everything, do a couple of reseeds (cap attempts)
+    attempts = 1
+    MAX_ATTEMPTS = 3
+    while not is_path_exists(source, demands, robots, connections) and attempts < MAX_ATTEMPTS:
         attempts += 1
         robots = []
-        connections = []
-
-        # Robots aleatorios
         for i in range(N_ROBOTS):
-            x = random.randint(100, ARENA_WIDTH - 80)
-            y = random.randint(100, ARENA_HEIGHT - 80)
+            x = random.randint(80, ARENA_WIDTH - 80)
+            y = random.randint(60, ARENA_HEIGHT - 60)
             robots.append(Robot(i, x, y, ROBOT_RADIUS))
+        connections = build_connections_fast(robots, source, demands, CONNECTION_DISTANCE)
 
-        # Conexiones robot-robot
-        for i in range(len(robots)):
-            for j in range(i + 1, len(robots)):
-                if distance(robots[i], robots[j]) <= CONNECTION_DISTANCE:
-                    connect(robots[i], robots[j], connections)
-
-        # Conexiones a Source y a cada Demand
-        for robot in robots:
-            if distance(robot, source) <= CONNECTION_DISTANCE:
-                connect(robot, source, connections)
-            for d in demands:
-                if distance(robot, d) <= CONNECTION_DISTANCE:
-                    connect(robot, d, connections)
-
-        # ¿Source alcanza a TODAS las demandas?
-        connected = is_path_exists(source, demands, robots, connections)
-
-    print(f"Connected after {attempts} attempts.")
-
-    # ---------- DEBUG rápido ----------
-    print("\n--- DEBUG: Robots in range ---")
-    for robot in robots:
-        in_range = [other.robot_id for other in robots
-                    if robot != other and distance(robot, other) <= CONNECTION_DISTANCE]
-        print(f" Robot {robot.robot_id} -> {in_range}")
-
-    print("\n--- DEBUG: Source direct connections ---")
-    direct_from_source = [robot.robot_id for robot in robots if distance(source, robot) <= CONNECTION_DISTANCE]
-    print(f"Source -> {direct_from_source}")
-
-    print("\n--- DEBUG: Demand direct connections ---")
-    for d in demands:
-        direct_from_d = [r.robot_id for r in robots if distance(d, r) <= CONNECTION_DISTANCE]
-        print(f"{d.name} -> {direct_from_d}")
-
-    # Tabla de hops y elección de pivote (minimiza Src→r + Σ Di→r)
+    # ---- Heavy math ONCE ----
     compute_all_hops_and_totals(source, demands, robots, connections)
-    print_hop_table(robots, [d.name for d in demands])
-    pivot = choose_pivot_robot(robots)
-    if pivot:
-        print(f"\n>>> PIVOT ROBOT: {pivot.robot_id} (total_overall={pivot.total_overall})")
+    print("Local minima (by total):", [r.robot_id for r in find_local_minima(robots, connections, "total")])
+
+    # Choose by local criterion first; fallback to global if none.
+    local_mins = find_local_minima(robots, connections, metric="total")  # or "source"
+    if local_mins:
+        # Among locals, pick the best (e.g., smallest total_overall)
+        pivot = min(local_mins, key=lambda r: robot_metric(r, "total"))
     else:
-        print("\n>>> No hay pivote (algún hop es inaccesible).")
+        # Fallback: global minimum (what you had before)
+        pivot = choose_pivot_robot(robots)
 
-    # ---------- DIBUJO INICIAL (red conjunta S–Pivot–D1/D2) ----------
-    def draw_poly(path, color=(255, 0, 0), width=3):
-        for i in range(len(path) - 1):
-            pygame.draw.line(screen, color, (path[i].x, path[i].y), (path[i+1].x, path[i+1].y), width)
+    # Print first 30 rows to console, save full table to a file
+    demand_names = [d.name for d in demands]
+    dump_hop_table_once(robots, demand_names, max_rows=121, save_path="hop_table.txt")
 
-    screen.fill((255, 255, 255))
-    source.draw(screen)
-    for d in demands:
-        d.draw(screen)
 
-    # Caminos por hops mínimos
     if pivot:
         path_S = bfs_shortest_path(source, pivot, connections)
         demand_paths = {d: bfs_shortest_path(d, pivot, connections) for d in demands}
@@ -464,99 +562,69 @@ def main():
         path_S = []
         demand_paths = {d: [] for d in demands}
 
-    # Grafo en gris
-    for a, b in connections:
-        pygame.draw.line(screen, (210, 210, 210), (a.x, a.y), (b.x, b.y), 1)
+    # ---- Draw helpers ----
+    def draw_poly(path, color=(255, 0, 0), width=3):
+        for i in range(len(path) - 1):
+            pygame.draw.line(screen, color, (path[i].x, path[i].y), (path[i+1].x, path[i+1].y), width)
 
-    # Red unida en rojo
+    # ---- First frame ----
+    screen.fill((255, 255, 255))
+    source.draw(screen)
+    for d in demands:
+        d.draw(screen)
+
+    # Optional: comment the next block if too many edges to draw fast
+    # for a,b in connections:
+    #     pygame.draw.line(screen, (220,220,220), (a.x,a.y), (b.x,b.y), 1)
+
+    # Draw only the joint tree (much faster)
     draw_poly(path_S, (255, 0, 0), 3)
     for d, p in demand_paths.items():
         draw_poly(p, (255, 0, 0), 3)
 
-    # Robots que pertenecen a la red (verde)
     robots_in_union = set(n for n in path_S + sum(demand_paths.values(), []) if isinstance(n, Robot))
-    for robot in robots:
-        if robot in robots_in_union:
-            robot.draw(screen, color=(0, 200, 0))
+    for rb in robots:
+        if rb in robots_in_union:
+            rb.draw(screen, color=(0, 200, 0))
         else:
-            robot.draw(screen, color=(0, 100, 255))
+            rb.draw(screen, color=(0, 100, 255))
 
     pygame.display.flip()
-    clock.tick(60)
+    clock.tick(30)
 
-    # Espera tecla
-    waiting = True
-    print("\nPress any key to continue...\n")
-    while waiting:
-        for event in pygame.event.get():
-            if event.type == pygame.KEYDOWN:
-                waiting = False
-            elif event.type == pygame.QUIT:
-                pygame.quit()
-                return
-
-    # ---------- LOOP PRINCIPAL (si luego mueves robots, recalcula y redibuja) ----------
+    # ---- Idle loop: JUST draw (no recompute) ----
     running = True
     while running:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                running = False
+
+        # If nothing moves, we can skip redrawing entirely,
+        # but we’ll keep a light redraw for window events:
         screen.fill((255, 255, 255))
         source.draw(screen)
         for d in demands:
             d.draw(screen)
 
-        # Recalcular conexiones por si cambias posiciones en el futuro
-        connections = []
-        for i in range(len(robots)):
-            for j in range(i + 1, len(robots)):
-                if distance(robots[i], robots[j]) <= CONNECTION_DISTANCE:
-                    connect(robots[i], robots[j], connections)
-        for robot in robots:
-            if distance(robot, source) <= CONNECTION_DISTANCE:
-                connect(robot, source, connections)
-            for d in demands:
-                if distance(robot, d) <= CONNECTION_DISTANCE:
-                    connect(robot, d, connections)
+        # Optional (comment if slow): draw the full graph
+        # for a,b in connections:
+        #     pygame.draw.line(screen, (220,220,220), (a.x,a.y), (b.x,b.y), 1)
 
-        # Recalcular hops, pivote y caminos
-        compute_all_hops_and_totals(source, demands, robots, connections)
-        pivot = choose_pivot_robot(robots)
-        if pivot:
-            path_S = bfs_shortest_path(source, pivot, connections)
-            demand_paths = {d: bfs_shortest_path(d, pivot, connections) for d in demands}
-        else:
-            path_S = []
-            demand_paths = {d: [] for d in demands}
-
-        # Eventos
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                running = False
-
-        # Dibujo del grafo
-        for a, b in connections:
-            pygame.draw.line(screen, (210, 210, 210), (a.x, a.y), (b.x, b.y), 1)
-
-        # Dibujo de la red conjunta
         draw_poly(path_S, (255, 0, 0), 3)
         for d, p in demand_paths.items():
             draw_poly(p, (255, 0, 0), 3)
 
-        robots_in_union = set(n for n in path_S + sum(demand_paths.values(), []) if isinstance(n, Robot))
-        for robot in robots:
-            if robot in robots_in_union:
-                robot.draw(screen, color=(0, 200, 0))
+        for rb in robots:
+            if rb in robots_in_union:
+                rb.draw(screen, color=(0, 200, 0))
             else:
-                robot.draw(screen, color=(0, 100, 255))
+                rb.draw(screen, color=(0, 100, 255))
 
         pygame.display.flip()
-
-    # Al salir, imprime los caminos
-    print("\n>>> Path Source → Pivot:")
-    print([get_node_name(n) for n in path_S])
-    for d, p in demand_paths.items():
-        print(f">>> Path {d.name} → Pivot:")
-        print([get_node_name(n) for n in p])
+        clock.tick(30)
 
     pygame.quit()
+
 
 if __name__ == "__main__":
     main()
