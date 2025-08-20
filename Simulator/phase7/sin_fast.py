@@ -8,7 +8,7 @@ from class_source_and_demand import Source, Demand
 
 ARENA_WIDTH, ARENA_HEIGHT = 600,300
 ROBOT_RADIUS = 5
-N_ROBOTS = 80
+N_ROBOTS = 7
 N_DEMANDS = 2
 CONNECTION_DISTANCE = 60
 
@@ -372,49 +372,6 @@ def choose_pivot_robot(robots):
     return min(candidates, key=lambda r: r.total_overall)
 from collections import defaultdict
 
-def build_connections_fast(robots, source, demands, r):
-    """Build edges using a spatial hash grid: O(n)–ish instead of O(n^2)."""
-    cell = r  # cell size = connection distance
-    grid = defaultdict(list)
-
-    # put robots in grid
-    for i, rb in enumerate(robots):
-        cx, cy = int(rb.x // cell), int(rb.y // cell)
-        grid[(cx, cy)].append(i)
-
-    connections = []
-
-    # robot-robot edges (only check 3x3 neighbor cells)
-    n = len(robots)
-    for (cx, cy), idxs in grid.items():
-        neigh_cells = [(cx+dx, cy+dy) for dx in (-1, 0, 1) for dy in (-1, 0, 1)]
-        cand_idxs = []
-        for nc in neigh_cells:
-            cand_idxs.extend(grid.get(nc, []))
-        cand_set = set(cand_idxs)
-
-        for i in idxs:
-            ri = robots[i]
-            # only j > i to avoid dup checking
-            for j in cand_set:
-                if j <= i:
-                    continue
-                rj = robots[j]
-                if (ri.x - rj.x)**2 + (ri.y - rj.y)**2 <= r*r:
-                    connections.append((ri, rj))
-
-    # robot-source edges
-    for rb in robots:
-        if (rb.x - source.x)**2 + (rb.y - source.y)**2 <= r*r:
-            connections.append((rb, source))
-
-    # robot-demand edges
-    for d in demands:
-        for rb in robots:
-            if (rb.x - d.x)**2 + (rb.y - d.y)**2 <= r*r:
-                connections.append((rb, d))
-
-    return connections
 
 def dump_hop_table_once(robots, demand_names, max_rows=None, save_path=None):
     """
@@ -522,8 +479,21 @@ def main():
         y = random.randint(60, ARENA_HEIGHT - 60)
         robots.append(Robot(i, x, y, ROBOT_RADIUS))
 
-    # ---- Build connections ONCE (fast) ----
-    connections = build_connections_fast(robots, source, demands, CONNECTION_DISTANCE)
+    
+    # ---- Build connections ONCE (simple O(n²)) ----
+    connections = []
+    # robot–robot
+    for i in range(len(robots)):
+        for j in range(i + 1, len(robots)):
+            if distance(robots[i], robots[j]) <= CONNECTION_DISTANCE:
+                connect(robots[i], robots[j], connections)
+    # robot–source / robot–demands
+    for rb in robots:
+        if distance(rb, source) <= CONNECTION_DISTANCE:
+            connect(rb, source, connections)
+        for d in demands:
+            if distance(rb, d) <= CONNECTION_DISTANCE:
+                connect(rb, d, connections)
 
     # If graph doesn’t connect everything, do a couple of reseeds (cap attempts)
     attempts = 1
@@ -535,8 +505,22 @@ def main():
             x = random.randint(80, ARENA_WIDTH - 80)
             y = random.randint(60, ARENA_HEIGHT - 60)
             robots.append(Robot(i, x, y, ROBOT_RADIUS))
-        connections = build_connections_fast(robots, source, demands, CONNECTION_DISTANCE)
-    #---------DEBUGGING-----------
+        # ---- Build connections ONCE (simple O(n²)) ----
+        connections = []
+        # robot–robot
+        for i in range(len(robots)):
+            for j in range(i + 1, len(robots)):
+                if distance(robots[i], robots[j]) <= CONNECTION_DISTANCE:
+                    connect(robots[i], robots[j], connections)
+        # robot–source / robot–demands
+        for rb in robots:
+            if distance(rb, source) <= CONNECTION_DISTANCE:
+                connect(rb, source, connections)
+            for d in demands:
+                if distance(rb, d) <= CONNECTION_DISTANCE:
+                    connect(rb, d, connections)
+
+        #---------DEBUG-----------
     print("\n--- DEBUG: Robots in range ---")
     for robot in robots:
         in_range = [other.robot_id for other in robots
