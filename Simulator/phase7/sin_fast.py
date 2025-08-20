@@ -8,9 +8,9 @@ from class_source_and_demand import Source, Demand
 
 ARENA_WIDTH, ARENA_HEIGHT = 600,300
 ROBOT_RADIUS = 5
-N_ROBOTS = 7
+N_ROBOTS = 20
 N_DEMANDS = 2
-CONNECTION_DISTANCE = 60
+CONNECTION_DISTANCE = 120
 
 # obstacles removed entirely
 obstacles = []  # keep empty so nothing references it
