@@ -8,9 +8,9 @@ from class_source_and_demand import Source, Demand
 
 ARENA_WIDTH, ARENA_HEIGHT = 600,300
 ROBOT_RADIUS = 5
-N_ROBOTS = 80
+N_ROBOTS = 60
 N_DEMANDS = 2
-CONNECTION_DISTANCE = 60
+CONNECTION_DISTANCE = 80
 
 # obstacles removed entirely
 obstacles = []  # keep empty so nothing references it
@@ -150,7 +150,7 @@ def bfs_shortest_path(start, goal, connections):
     return []  # no hay camino
 
 
-# ❌ obstacle-aware helpers removed
+# obstacle-aware helpers removed
 def is_best_path_valid(path, connections):
     for i in range(len(path) - 1):
         a = path[i]
