@@ -478,7 +478,7 @@ def main():
         x = random.randint(80, ARENA_WIDTH - 80)
         y = random.randint(60, ARENA_HEIGHT - 60)
         robots.append(Robot(i, x, y, ROBOT_RADIUS))
-
+#TRYING
     
     # ---- Build connections ONCE (simple O(n²)) ----
     connections = []
