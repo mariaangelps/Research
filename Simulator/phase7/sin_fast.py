@@ -8,7 +8,7 @@ from class_source_and_demand import Source, Demand
 
 ARENA_WIDTH, ARENA_HEIGHT = 600,300
 ROBOT_RADIUS = 5
-N_ROBOTS = 20
+N_ROBOTS = 60
 N_DEMANDS = 2
 CONNECTION_DISTANCE = 120
 
@@ -150,7 +150,7 @@ def bfs_shortest_path(start, goal, connections):
     return []  # no hay camino
 
 
-# ❌ obstacle-aware helpers removed
+# obstacle-aware helpers removed
 def is_best_path_valid(path, connections):
     for i in range(len(path) - 1):
         a = path[i]
@@ -363,13 +363,20 @@ def print_hop_table(robots, demand_names):
         total = str(r.total_overall) if r.total_overall is not None else "∞"
         print(f"{r.robot_id:>5} | {str(r.hop_from_source):>3} | " +
               " | ".join([f"{x:>3}" for x in dhops]) + f" | {total}")
+
 def choose_pivot_robot(robots):
-    # Elige el robot con menor r.total_overall (ignorando None). Desempate: menor grado (más “centralidad” util).
-    candidates = [r for r in robots if r.total_overall is not None]
+    """
+    Fallback global pivot selection (when no local minima are found).
+    Uses the same tie-breaking logic as in main():
+      - lowest total_overall
+      - if tie: closest to source
+      - if still tie: lowest robot_id
+    """
+    candidates = [r for r in robots if getattr(r, "total_overall", None) is not None]
     if not candidates:
         return None
-    # Puedes afinar el desempate con “grado” si lo calculas; por ahora, sólo total.
-    return min(candidates, key=lambda r: r.total_overall)
+    return min(candidates, key=pivot_key)
+
 from collections import defaultdict
 
 
@@ -460,7 +467,24 @@ def is_local_minimum(rb, connections, metric="total"):
 def find_local_minima(robots, connections, metric="total"):
     """Return a list of robots that are local minima under the chosen metric."""
     return [r for r in robots if is_local_minimum(r, connections, metric=metric)]
+def pivot_key(r):
+    """
+    Key function for pivot selection.
+    Priority order:
+      1) Lowest total_overall (sum of source + all demands hop counts)
+      2) Closest to the source (lowest hop_from_source)
+      3) Lowest robot_id as a final deterministic tie-breaker
 
+    This ensures that when there is a tie in total_overall,
+    the pivot chosen will be the one physically closer to the source.
+    """
+    total = robot_metric(r, "total")
+    src = getattr(r, "hop_from_source", None)
+    if total is None:
+        total = float("inf")
+    if src is None:
+        src = 10**9 # Large number so they lose tie-break if unreachable
+    return (total, src, r.robot_id)
 def main():
     pygame.init()
     clock = pygame.time.Clock()
@@ -478,7 +502,7 @@ def main():
         x = random.randint(80, ARENA_WIDTH - 80)
         y = random.randint(60, ARENA_HEIGHT - 60)
         robots.append(Robot(i, x, y, ROBOT_RADIUS))
-#TRYING
+    #TRYING
     
     # ---- Build connections ONCE (simple O(n²)) ----
     connections = []
@@ -540,18 +564,22 @@ def main():
     compute_all_hops_and_totals(source, demands, robots, connections)
     print("Local minima (by total):", [r.robot_id for r in find_local_minima(robots, connections, "total")])
 
-    # Choose by local criterion first; fallback to global if none.
-    local_mins = find_local_minima(robots, connections, metric="total")  # or "source"
+    # Choose pivot robot:
+    # Step 1: Filter to local minima (lowest in their neighborhood by total_overall)
+    # Step 2: Pick the one with smallest total_overall.
+    #         If there is a tie, pick the one closest to the source.
+    #         If still tied, choose by robot_id for deterministic behavior.
+    local_mins = find_local_minima(robots, connections, metric="total")
     if local_mins:
-        # Among locals, pick the best (e.g., smallest total_overall)
-        pivot = min(local_mins, key=lambda r: robot_metric(r, "total"))
+        pivot = min(local_mins, key=pivot_key)  # << ahora desempata por cercanía a la fuente
     else:
-        # Fallback: global minimum (what you had before)
-        pivot = choose_pivot_robot(robots)
+        # Fallback: pick global best using the same tie-breaking logic
+        candidates = [r for r in robots if getattr(r, "total_overall", None) is not None]
+        pivot = min(candidates, key=pivot_key) if candidates else None
 
     # Print first 30 rows to console, save full table to a file
     demand_names = [d.name for d in demands]
-    dump_hop_table_once(robots, demand_names, max_rows=121, save_path="hop_table.txt")
+    dump_hop_table_once(robots, demand_names, max_rows=30, save_path="hop_table.txt")
 
 
     if pivot:
