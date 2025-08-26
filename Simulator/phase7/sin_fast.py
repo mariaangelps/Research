@@ -35,7 +35,8 @@ def connect(a, b, connections):
     if (a, b) not in connections and (b, a) not in connections:
         connections.append((a, b))
 
-def propagate_local_hop_count(start_node, robots, connections, attr_hop, attr_parent):
+def propagate_local_hop_count(start_node, robots, connections, attr_hop, attr_parent, debug=False):
+
     """
     Escribe en cada robot su hop (mínimo) desde start_node.
     Regla: robot vecino de un robot con hop=h => hop vecino = h+1.
@@ -591,6 +592,52 @@ def main():
         path_S = []
         demand_paths = {d: [] for d in demands}
     
+    # === HOPS RELATIVOS AL PIVOT (clarito para profe) ===
+    if pivot:
+        # 1) Hops desde Source hasta TODOS los robots (usamos la función local) …
+        #    … y leemos el hop del PIVOT:
+        propagate_local_hop_count(source, robots, connections,
+                                attr_hop='hop_from_source_LOCAL',
+                                attr_parent='par_from_source_LOCAL',
+                                debug=False)
+        s2p_hops = getattr(pivot, 'hop_from_source_LOCAL', None)  # Source -> Pivot (en hops)
+
+        # 2) Hops desde CADA demanda hasta TODOS los robots (así usamos "viceversa")
+        #    … y leemos el hop del PIVOT (Demanda -> Pivot == Pivot -> Demanda en grafo no dirigido).
+        demand_to_pivot = {}   # nombre -> hops (int) o None
+        for d in demands:
+            attr_h = f'hop_from_{d.name}_LOCAL'
+            attr_p = f'par_from_{d.name}_LOCAL'
+            propagate_local_hop_count(d, robots, connections, attr_h, attr_p, debug=False)
+            demand_to_pivot[d.name] = getattr(pivot, attr_h, None)
+
+        # 3) (Opcional) También puedes verificar con el camino real que estás dibujando:
+        #    edges reales = len(path) - 1
+        def path_edges(path):
+            return None if not path or len(path) < 2 else len(path) - 1
+
+        s2p_edges_drawn = path_edges(path_S)
+        p2d_edges_drawn = {d.name: path_edges(demand_paths.get(d, [])) for d in demands}
+
+        # 4) Total pivot-céntrico = (Source->Pivot) + sum(Pivot->Di)
+        #    (Si alguno es None, el total es None/∞)
+        parts = [s2p_hops] + [demand_to_pivot[nm] for nm in demand_to_pivot]
+        pivot_total = None if any(v is None for v in parts) else sum(parts)
+
+        # 5) Imprime resumen pedagógico para el profe
+        def fmt(x): return "∞" if x is None else str(x)
+
+        print("\n=== PIVOT-CENTRIC HOPS (usando propagate_local_hop_count) ===")
+        print(f"Pivot: Robot {pivot.robot_id}")
+        print("Source -> Pivot (hops):", fmt(s2p_hops))
+        for nm in sorted(demand_to_pivot.keys()):
+            print(f"Pivot -> {nm} (hops):", fmt(demand_to_pivot[nm]))
+        print("TOTAL (Source->Pivot + Σ Pivot->Di):", fmt(pivot_total))
+
+        print("\n[Check con caminos dibujados (edges reales)]")
+        print("Source->Pivot (edges):", fmt(s2p_edges_drawn))
+        for nm in sorted(p2d_edges_drawn.keys()):
+            print(f"Pivot->{nm} (edges):", fmt(p2d_edges_drawn[nm]))
 
     """
     sale raro con esto
