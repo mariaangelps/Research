@@ -8,8 +8,8 @@ from class_source_and_demand import Source, Demand
 
 ARENA_WIDTH, ARENA_HEIGHT = 600,300
 ROBOT_RADIUS = 5
-N_ROBOTS = 60
-N_DEMANDS = 2
+N_ROBOTS = 120
+N_DEMANDS = 10
 CONNECTION_DISTANCE = 120
 
 # obstacles removed entirely
@@ -483,8 +483,15 @@ def main():
 
     # ---- Nodes ----
     source = Node("Source", 50, ARENA_HEIGHT // 2, (255, 0, 0))
-    demands = [Node("D1", ARENA_WIDTH - 50, 50, (0, 128, 0)),
-               Node("D2", ARENA_WIDTH - 50, ARENA_HEIGHT - 50, (0, 128, 0))]
+    # ---- Demands (usa N_DEMANDS) ----
+    demands = []
+    for i in range(N_DEMANDS):
+        name = f"D{i+1}"
+        x = ARENA_WIDTH - 50
+        # espaciadas en vertical: 1..N_DEMANDS entre 50 y HEIGHT-50
+        y = int((i + 1) * ARENA_HEIGHT / (N_DEMANDS + 1))
+        demands.append(Node(name, x, y, (0, 128, 0)))
+
 
     # ---- Robots (random once) ----
     robots = []
