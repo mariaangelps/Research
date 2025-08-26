@@ -39,6 +39,9 @@ def propagate_local_hop_count(source, robots, connections, attr_hop, attr_parent
     for robot in robots:
         setattr(robot, attr_hop, None)
         setattr(robot, attr_parent, None)
+        if isinstance(source, Robot):
+            setattr(source, attr_hop, 0)
+            setattr(source, attr_parent, None)
 
     queue = []
     visited = set()
@@ -159,75 +162,86 @@ def is_best_path_valid(path, connections):
             continue
         if (a, b) not in connections and (b, a) not in connections:
             return False
-""""
-def choose_best_demand(source, demands, robots, connections):
-    best = {"demand": None, "path_src": [], "path_dst": [], "score": float("inf"), "tie_len": float("inf")}
-    propagate_local_hop_count(source, robots, connections, 'hop_from_source', 'parent_from_source')
 
-    for r in robots:
-        r.demand_hops = {}
-
-    for d in demands:
-        propagate_local_hop_count(d, robots, connections, 'hop_from_demand', 'parent_from_demand')
-        for r in robots:
-            r.demand_hops[d.name] = r.hop_from_demand
-
-        path_src = build_optimal_path(source, d, robots, connections, 'hop_from_source')
-        path_dst = build_optimal_path(d, source, robots, connections, 'hop_from_demand')
-
-        elig = [r.hop_from_source + r.hop_from_demand for r in robots
-                if r.hop_from_source is not None and r.hop_from_demand is not None]
-        min_total = min(elig) if elig else float("inf")
-        tie_len = len(path_src)
-
-        if (min_total < best["score"]) or (min_total == best["score"] and tie_len < best["tie_len"]):
-            best.update({"demand": d, "path_src": path_src, "path_dst": path_dst,
-                         "score": min_total, "tie_len": tie_len})
-    return best["demand"], best["path_src"], best["path_dst"]
-"""
-def build_optimal_path(start, end, robots, connections, hop_attr):
+def build_optimal_path(start, end, robots, connections, hop_attr, score_attr=None):
+    """
+    Avanza por capas de hop desde 'start' (según hop_attr).
+    Permite 'saltar' directamente a un Node ('end') si está dentro de CONNECTION_DISTANCE.
+    El desempate entre candidatos usa:
+      1) score_attr (si se pasa), si no hop_attr
+      2) menor grado (menos vecinos robot-robot)
+      3) menor robot_id (determinismo)
+    IMPORTANTE: Antes de llamar, debes haber corrido propagate_local_hop_count
+    para los atributos hop involucrados (hop_attr y, si aplica, score_attr).
+    """
     path = []
     visited = set()
     current = start
-    current_hop = 0 if not isinstance(start, Robot) else getattr(start, hop_attr)
+
+    # Inicialización robusta del nivel de hop actual
+    if isinstance(start, Robot):
+        ch = getattr(start, hop_attr, 0)
+        current_hop = 0 if ch is None else ch
+    else:
+        current_hop = 0
 
     while current != end:
         visited.add(current)
+
+        # Cierre por salto si 'end' es Node y está a rango físico
         if isinstance(end, Node) and distance(current, end) <= CONNECTION_DISTANCE:
-            if not path or path[-1] != current:
+            if not path or path[-1] is not current:
                 path.append(current)
             path.append(end)
             break
 
+        # Candidatos: robots en la siguiente capa (hop = current_hop + 1)
         candidates = []
         for r in robots:
             if r in visited:
                 continue
-            if getattr(r, hop_attr) == current_hop + 1:
-                if existe_ruta_fisica(current, r, connections):
-                    sh = getattr(r, 'hop_from_source') or float('inf')
-                    dh = getattr(r, 'hop_from_demand') or float('inf')
-                    candidates.append((sh + dh, r))
+            hop_val = getattr(r, hop_attr, None)
+            if hop_val is None:
+                continue
+            if hop_val == current_hop + 1 and existe_ruta_fisica(current, r, connections):
+                # score configurable (si no hay score_attr, usa hop_val)
+                if score_attr is None:
+                    score = hop_val
+                else:
+                    score = getattr(r, score_attr, None)
+                    if score is None:
+                        score = float('inf')
+                candidates.append((score, r))
 
         if not candidates:
-            break
+            break  # no hay forma de avanzar a la siguiente capa
 
-        def connection_score(robot, connections):
-            vecinos = [r2 for (r1, r2) in connections if r1 == robot and isinstance(r2, Robot)] + \
-                      [r1 for (r1, r2) in connections if r2 == robot and isinstance(r1, Robot)]
-            return -len(vecinos)
+        # Desempate adicional: menos grado primero, luego robot_id
+        def connection_score(robot):
+            deg = 0
+            for a, b in connections:
+                if a is robot and isinstance(b, Robot):
+                    deg += 1
+                elif b is robot and isinstance(a, Robot):
+                    deg += 1
+            return -deg  # menos vecinos = mejor
 
-        _, best_next = min(candidates, key=lambda x: (x[0], connection_score(x[1], connections)))
+        candidates.sort(key=lambda x: (x[0], connection_score(x[1]), x[1].robot_id))
+        best_next = candidates[0][1]
         path.append(best_next)
         visited.add(best_next)
         current = best_next
         current_hop += 1
 
-    if isinstance(start, Node):
-        first = path[0] if path else None
-        if first and first != start and distance(start, first) <= CONNECTION_DISTANCE:
+    # Si el inicio es un Node y el primer robot quedó a rango, inserta el Node al inicio
+    if isinstance(start, Node) and path:
+        first = path[0]
+        if first is not start and distance(start, first) <= CONNECTION_DISTANCE:
             path.insert(0, start)
+
     return path
+
+
 
 def build_path_after_repulsion(start, end, robots, connections, hop_attr):
     # identical to build_optimal_path but restricted to neighbors of current
@@ -543,6 +557,7 @@ def main():
             for d in demands:
                 if distance(rb, d) <= CONNECTION_DISTANCE:
                     connect(rb, d, connections)
+        propagate_local_hop_count(source, robots, connections, 'hop_from_source', 'parent_from_source')
 
         #---------DEBUG-----------
     print("\n--- DEBUG: Robots in range ---")
@@ -581,10 +596,37 @@ def main():
     demand_names = [d.name for d in demands]
     dump_hop_table_once(robots, demand_names, max_rows=30, save_path="hop_table.txt")
 
-
+    """
     if pivot:
         path_S = bfs_shortest_path(source, pivot, connections)
         demand_paths = {d: bfs_shortest_path(d, pivot, connections) for d in demands}
+    else:
+        path_S = []
+        demand_paths = {d: [] for d in demands}
+    """
+    if pivot:
+        # TRONCO: avanzar por capas desde Source y puntuar por cercanía a Source
+        path_S = build_optimal_path(
+            start=source, end=pivot, robots=robots, connections=connections,
+            hop_attr='hop_from_source',      # capas desde Source
+            score_attr='hop_from_source'     # score: más cerca de Source
+        )
+
+        # RAMAS: capas desde el Pivot, score hacia cada demanda
+        demand_paths = {}
+
+        # Propaga una vez desde el Pivot para capas de las ramas
+        propagate_local_hop_count(pivot, robots, connections, 'hop_from_pivot', 'parent_from_pivot')
+
+        for d in demands:
+            # score de la rama: cercanía a ESTA demanda
+            propagate_local_hop_count(d, robots, connections, 'hop_from_demand', 'parent_from_demand')
+
+            demand_paths[d] = build_optimal_path(
+                start=pivot, end=d, robots=robots, connections=connections,
+                hop_attr='hop_from_pivot',      # capas desde el Pivot
+                score_attr='hop_from_demand'    # score: más cerca de la demanda d
+            )
     else:
         path_S = []
         demand_paths = {d: [] for d in demands}
