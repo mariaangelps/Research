@@ -191,8 +191,12 @@ def build_optimal_path(start, end, robots, connections, hop_attr):
                 continue
             if getattr(r, hop_attr) == current_hop + 1:
                 if existe_ruta_fisica(current, r, connections):
-                    sh = getattr(r, 'hop_from_source') or float('inf')
-                    dh = getattr(r, 'hop_from_demand') or float('inf')
+                    sh = getattr(r, 'hop_from_source', None)
+                    sh = sh if sh is not None else float('inf')
+
+                    dh = getattr(r, 'hop_from_demand', None)
+                    dh = dh if dh is not None else float('inf')
+
                     candidates.append((sh + dh, r))
 
         if not candidates:
@@ -548,6 +552,11 @@ def main():
     
     # ---- Heavy math ONCE ----
     compute_all_hops_and_totals(source, demands, robots, connections)
+    # --- Derivar hop mínimo hacia cualquier demanda (para el score del builder) ---
+    for r in robots:
+        vals = [v for v in getattr(r, 'demand_hops', {}).values() if v is not None]
+        r.hop_from_demand = min(vals) if vals else None
+
     print("Local minima (by total):", [r.robot_id for r in find_local_minima(robots, connections, "total")])
 
     # Choose pivot robot:
@@ -567,14 +576,34 @@ def main():
     demand_names = [d.name for d in demands]
     dump_hop_table_once(robots, demand_names, max_rows=30, save_path="hop_table.txt")
 
-
+    
     if pivot:
         path_S = bfs_shortest_path(source, pivot, connections)
         demand_paths = {d: bfs_shortest_path(d, pivot, connections) for d in demands}
     else:
         path_S = []
         demand_paths = {d: [] for d in demands}
+    
 
+    """
+    sale raro con esto
+    # --- Rutas guiadas por hops (Opción A) ---
+    if pivot:
+        # Source -> Pivot
+        propagate_local_hop_count(source, robots, connections,
+                                'hop_from_source', 'parent_from_source')
+        path_S = build_optimal_path(source, pivot, robots, connections, 'hop_from_source')
+
+        # Demanda -> Pivot (una por una)
+        demand_paths = {}
+        for d in demands:
+            propagate_local_hop_count(d, robots, connections,
+                                    'hop_from_demand', 'parent_from_demand')
+            demand_paths[d] = build_optimal_path(d, pivot, robots, connections, 'hop_from_demand')
+    else:
+        path_S = []
+        demand_paths = {d: [] for d in demands}
+    """
     # ---- Draw helpers ----
     def draw_poly(path, color=(255, 0, 0), width=3):
         for i in range(len(path) - 1):
