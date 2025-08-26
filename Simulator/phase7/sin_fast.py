@@ -9,7 +9,7 @@ from class_source_and_demand import Source, Demand
 ARENA_WIDTH, ARENA_HEIGHT = 600,300
 ROBOT_RADIUS = 5
 N_ROBOTS = 120
-N_DEMANDS = 10
+N_DEMANDS = 2
 CONNECTION_DISTANCE = 120
 
 # obstacles removed entirely
@@ -38,36 +38,41 @@ def connect(a, b, connections):
 def propagate_local_hop_count(start_node, robots, connections, attr_hop, attr_parent, debug=False):
 
     """
-    Escribe en cada robot su hop (mínimo) desde start_node.
-    Regla: robot vecino de un robot con hop=h => hop vecino = h+1.
+    Writes on each robot the minimum hop count from start_node.
+    Rule: a robot neighbor of a robot with hop=h will get hop=h+1.
+    Non-robot Node objects (Source/Demands) just relay without increasing hop.
+    BFS is used over the undirected graph represented by 'connections'.
     """
+
     from collections import deque
 
-    # Inicializa
+    # Reset hop/parent attributes on robots
     for r in robots:
         setattr(r, attr_hop, None)
         setattr(r, attr_parent, None)
 
-    # BFS sobre el grafo no dirigido
+   # Standard BFS
     q = deque()
     seen = set([start_node])
 
-    # Semilla: robots a 1 salto del start_node
+     # Seed: neighbors of the start node
     for nb in neighbors_of(start_node, connections):
         if isinstance(nb, Robot):
+             # Robots directly reachable from the start get hop = 1
             setattr(nb, attr_hop, 1)
             setattr(nb, attr_parent, start_node if isinstance(start_node, Robot) else None)
             q.append(nb)
             seen.add(nb)
         else:
-            # nodos "Node" pasan el mensaje sin sumar hop
+            # Non-robot intermediate nodes are enqueued to continue BFS
             q.append(nb)
             seen.add(nb)
 
     while q:
         cur = q.popleft()
 
-        # hop actual del que sale (solo robots tienen hop; Node “transita”)
+        # Current hop value (only robots have hop values)
+
         cur_hop = getattr(cur, attr_hop, None) if isinstance(cur, Robot) else None
 
         for nxt in neighbors_of(cur, connections):
@@ -75,7 +80,7 @@ def propagate_local_hop_count(start_node, robots, connections, attr_hop, attr_pa
                 seen.add(nxt)
                 q.append(nxt)
 
-            # Relajación: si voy de robot a robot, el vecino debe ser cur_hop + 1
+            # Relaxation for robot-to-robot edges: next hop should be cur_hop + 1
             if isinstance(cur, Robot) and isinstance(nxt, Robot):
                 candidate = (cur_hop if cur_hop is not None else 0) + 1
                 prev = getattr(nxt, attr_hop)
@@ -85,7 +90,7 @@ def propagate_local_hop_count(start_node, robots, connections, attr_hop, attr_pa
 
 
 def is_path_exists(source, demands, robots, connections):
-    """True solo si desde Source se alcanza a TODAS las demandas."""
+    """Return True if ALL demand nodes are reachable from Source."""
     target = set(demands)
     reached = set()
     seen = {source}
@@ -96,8 +101,8 @@ def is_path_exists(source, demands, robots, connections):
         if cur in target:
             reached.add(cur)
             if len(reached) == len(target):
-                return True  # Ya alcanzamos todas
-        # expandir vecinos en grafo no dirigido
+                return True  
+        # expand neighbors
         for a, b in connections:
             nxt = None
             if a == cur:
@@ -128,6 +133,10 @@ def existe_ruta_fisica(a, b, conexiones_fisicas):
 
 def get_node_name(n):
     return n.name if isinstance(n, Node) else f"Robot {n.robot_id}"
+
+# Generator over neighbors of 'node' in the undirected 'connections' list
+#Each (a, b) pair represents a bidirectional link, so both a→b and b→a are valid.
+
 def neighbors_of(node, connections):
     for a, b in connections:
         if a == node:
@@ -136,7 +145,9 @@ def neighbors_of(node, connections):
             yield a
 
 def bfs_shortest_path(start, goal, connections):
-    """Camino más corto (en hops) en el grafo no dirigido; incluye start y goal."""
+
+    #Unweighted shortest path (by hops) in the undirected graph; includes start and goal.
+
     if start == goal:
         return [start]
     from collections import deque
@@ -148,7 +159,7 @@ def bfs_shortest_path(start, goal, connections):
             if nxt not in parent:
                 parent[nxt] = cur
                 if nxt == goal:
-                    # reconstruir
+                    # reconstruct golden path by backtracking parents
                     path = [goal]
                     while path[-1] is not None:
                         prev = parent[path[-1]]
@@ -164,6 +175,7 @@ def bfs_shortest_path(start, goal, connections):
 # obstacle-aware helpers removed
 def is_best_path_valid(path, connections):
     for i in range(len(path) - 1):
+        #ensure each consecutive pair in 'path' has an edge in 'connections'
         a = path[i]
         b = path[i + 1]
         if a == b:
@@ -173,6 +185,11 @@ def is_best_path_valid(path, connections):
 
 
 def build_optimal_path(start, end, robots, connections, hop_attr):
+    """
+    Greedy path builder that advances through robots with hop = current_hop + 1,
+    preferring robots that minimize (hop_from_source + hop_from_demand) and with
+    a mild tie-break on fewer robot neighbors (to reduce branching).
+    """
     path = []
     visited = set()
     current = start
@@ -180,6 +197,7 @@ def build_optimal_path(start, end, robots, connections, hop_attr):
 
     while current != end:
         visited.add(current)
+        # If the end is a Node and it's physically within connection distance, close the path
         if isinstance(end, Node) and distance(current, end) <= CONNECTION_DISTANCE:
             if not path or path[-1] != current:
                 path.append(current)
@@ -190,8 +208,10 @@ def build_optimal_path(start, end, robots, connections, hop_attr):
         for r in robots:
             if r in visited:
                 continue
+            # Only consider robots in the next hop layer (curr+1)
             if getattr(r, hop_attr) == current_hop + 1:
                 if existe_ruta_fisica(current, r, connections):
+                    # Combine source/demand hop info for scoring
                     sh = getattr(r, 'hop_from_source', None)
                     sh = sh if sh is not None else float('inf')
 
@@ -214,6 +234,7 @@ def build_optimal_path(start, end, robots, connections, hop_attr):
         current = best_next
         current_hop += 1
 
+    # If start is a Node and the first hop is within range, make connection
     if isinstance(start, Node):
         first = path[0] if path else None
         if first and first != start and distance(start, first) <= CONNECTION_DISTANCE:
@@ -268,6 +289,7 @@ def build_path_after_repulsion(start, end, robots, connections, hop_attr):
             path.insert(0, start)
     return path
 
+# Helper to inspect min total hops per demand; prints tie lengths and best robot scores
 def debug_global_choice(source, demands, robots, connections, best_demand):
     propagate_local_hop_count(source, robots, connections, 'hop_from_source', 'parent_from_source')
     rows = []
@@ -290,7 +312,10 @@ def debug_global_choice(source, demands, robots, connections, best_demand):
     
         
 def bfs_hops_from(start_node, robots, connections):
-    """Devuelve dict {robot: hops} desde start_node a cada robot alcanzable."""
+    """
+    Return a dict {robot: hops} representing the hop distance from 'start_node'
+    to each reachable robot using BFS over undirected edges.
+    """
     INF = None
     hops = {r: INF for r in robots}
     visited = set([start_node])
@@ -298,7 +323,7 @@ def bfs_hops_from(start_node, robots, connections):
 
     while q:
         cur, d = q.popleft()
-        # Si llegamos a un robot, registra hop si es el primero o mejora
+         #Record hop for robots the first time they are seen or if we find a better d
         if isinstance(cur, Robot):
             if hops[cur] is None or d < hops[cur]:
                 hops[cur] = d
@@ -314,7 +339,16 @@ def bfs_hops_from(start_node, robots, connections):
                 q.append((nxt, d + 1))
     return hops
 
+
 def compute_all_hops_and_totals(source, demands, robots, connections):
+    """
+    Compute per-robot:
+      - hop_from_source
+      - demand_hops (per demand)
+      - total_overall = hop_from_source + sum(hops from each demand)
+    Robots unreachable from either source or any demand get total_overall = None (∞).
+    """
+     
     # Hops desde la fuente
     hop_src = bfs_hops_from(source, robots, connections)
 
@@ -323,12 +357,12 @@ def compute_all_hops_and_totals(source, demands, robots, connections):
     for d in demands:
         hop_demands[d.name] = bfs_hops_from(d, robots, connections)
 
-    # Adjuntar a cada robot y calcular el "overall"
+    # Attach values on each robot and compute totals
     for r in robots:
         r.hop_from_source = hop_src[r]
         r.demand_hops = {dn: hop_demands[dn][r] for dn in hop_demands}
 
-        # TOTAL OVERALL = Source→r + sum(Di→r)  (esto es lo que tu profe llama “total number of hop counts”)
+        # TOTAL OVERALL = Source→r + sum(Di→r)  “total number of hop counts”
         # Si alguno es None (inaccesible), el total se considera infinito (None).
         parts = []
         if r.hop_from_source is not None:
@@ -592,18 +626,17 @@ def main():
         path_S = []
         demand_paths = {d: [] for d in demands}
     
-    # === HOPS RELATIVOS AL PIVOT (clarito para profe) ===
+    # === HOPS report to PIVOT ===
     if pivot:
-        # 1) Hops desde Source hasta TODOS los robots (usamos la función local) …
-        #    … y leemos el hop del PIVOT:
+        # 1) Hops from Source to ALL robots 
         propagate_local_hop_count(source, robots, connections,
                                 attr_hop='hop_from_source_LOCAL',
                                 attr_parent='par_from_source_LOCAL',
                                 debug=False)
         s2p_hops = getattr(pivot, 'hop_from_source_LOCAL', None)  # Source -> Pivot (en hops)
 
-        # 2) Hops desde CADA demanda hasta TODOS los robots (así usamos "viceversa")
-        #    … y leemos el hop del PIVOT (Demanda -> Pivot == Pivot -> Demanda en grafo no dirigido).
+        # 2) Hops from each Demand to ALL robots
+        # (Demanda -> Pivot == Pivot -> Demanda 
         demand_to_pivot = {}   # nombre -> hops (int) o None
         for d in demands:
             attr_h = f'hop_from_{d.name}_LOCAL'
@@ -619,12 +652,12 @@ def main():
         s2p_edges_drawn = path_edges(path_S)
         p2d_edges_drawn = {d.name: path_edges(demand_paths.get(d, [])) for d in demands}
 
-        # 4) Total pivot-céntrico = (Source->Pivot) + sum(Pivot->Di)
+        # 4) Total pivot-centric = (Source->Pivot) + sum(Pivot->Di)
         #    (Si alguno es None, el total es None/∞)
         parts = [s2p_hops] + [demand_to_pivot[nm] for nm in demand_to_pivot]
         pivot_total = None if any(v is None for v in parts) else sum(parts)
 
-        # 5) Imprime resumen pedagógico para el profe
+        # 5) Print report
         def fmt(x): return "∞" if x is None else str(x)
 
         print("\n=== PIVOT-CENTRIC HOPS (usando propagate_local_hop_count) ===")
