@@ -11,6 +11,13 @@ ROBOT_RADIUS = 5
 N_ROBOTS = 120
 N_DEMANDS = 2
 CONNECTION_DISTANCE = 120
+SENSE_RADIUS_R = 200        # big sensing radius (R)
+CONNECT_RADIUS_r = CONNECTION_DISTANCE  # connection radius (r)
+STEP_MAX = 1.6              # max movement per frame (px)
+K_ATTR_ONPATH = 0.60        # attraction gain if robot is on the golden network
+K_ATTR_OFFPATH = 0.15       # weaker attraction if robot is outside
+RECOMPUTE_EVERY = 10        # recompute pivot + paths every N frames
+
 
 # obstacles removed entirely
 obstacles = []  # keep empty so nothing references it
@@ -80,7 +87,7 @@ def propagate_local_hop_count(start_node, robots, connections, attr_hop, attr_pa
                 seen.add(nxt)
                 q.append(nxt)
 
-            # Relaxation for robot-to-robot edges: next hop should be cur_hop + 1
+            # Relaxation for robot-to-robot edges: next hop should be c`ur_hop + 1
             if isinstance(cur, Robot) and isinstance(nxt, Robot):
                 candidate = (cur_hop if cur_hop is not None else 0) + 1
                 prev = getattr(nxt, attr_hop)
@@ -327,7 +334,7 @@ def bfs_hops_from(start_node, robots, connections):
         if isinstance(cur, Robot):
             if hops[cur] is None or d < hops[cur]:
                 hops[cur] = d
-        # Expandir vecinos
+        # Expand neighbors
         for a, b in connections:
             nxt = None
             if a == cur and b not in visited:
@@ -510,7 +517,66 @@ def pivot_key(r):
     if src is None:
         src = 10**9 # Large number so they lose tie-break if unreachable
     return (total, src, r.robot_id)
+
+def nearest_demand_and_dist(p, demands):
+    best = (None, float('inf'))
+    for d in demands:
+        dist = math.hypot(p.x - d.x, p.y - d.y)
+        if dist < best[1]:
+            best = (d, dist)
+    return best  # (demand, distance)
+
+def clamp_step(dx, dy, max_step):
+    mag = math.hypot(dx, dy)
+    if mag == 0:
+        return 0.0, 0.0
+    if mag <= max_step:
+        return dx, dy
+    s = max_step / mag
+    return dx * s, dy * s
+
+def rebuild_connections(robots, source, demands):
+    connections = []
+    # robot–robot
+    for i in range(len(robots)):
+        for j in range(i + 1, len(robots)):
+            if distance(robots[i], robots[j]) <= CONNECTION_DISTANCE:
+                connect(robots[i], robots[j], connections)
+    # robot–source / robot–demands
+    for rb in robots:
+        if distance(rb, source) <= CONNECTION_DISTANCE:
+            connect(rb, source, connections)
+        for d in demands:
+            if distance(rb, d) <= CONNECTION_DISTANCE:
+                connect(rb, d, connections)
+    return connections
+
+def apply_sink_attraction(robots, demands, robots_in_union):
+    """
+    Virtual attraction to the closest sink, only if r < D < R.
+    - Robots on the golden network (robots_in_union): strong attraction.
+    - Robots outside but within the sensing ring: weaker attraction.
+    """
+    for rb in robots:
+        d, dist = nearest_demand_and_dist(rb, demands)
+        if d is None:
+            continue
+
+        if CONNECT_RADIUS_r < dist < SENSE_RADIUS_R:
+            k = K_ATTR_ONPATH if rb in robots_in_union else K_ATTR_OFFPATH
+            vx = d.x - rb.x
+            vy = d.y - rb.y
+            fx = k * vx / (dist + 1e-6)
+            fy = k * vy / (dist + 1e-6)
+            dx, dy = clamp_step(fx, fy, STEP_MAX)
+            rb.x += dx
+            rb.y += dy
+
+
+
+
 def main():
+    
     pygame.init()
     clock = pygame.time.Clock()
     screen = pygame.display.set_mode((ARENA_WIDTH, ARENA_HEIGHT))
@@ -723,6 +789,7 @@ def main():
 
     # ---- Idle loop: JUST draw (no recompute) ----
     running = True
+    """
     while running:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -751,6 +818,62 @@ def main():
 
         pygame.display.flip()
         clock.tick(30)
+    """
+        # ---- Dynamic loop: move → rebuild → (optional) recompute → draw ----
+    frame = 0
+    while running:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                running = False
+
+        # 1) Apply sink attraction (only after network is formed)
+        apply_sink_attraction(robots, demands, robots_in_union)
+
+        # 2) Rebuild connections with updated positions
+        connections = rebuild_connections(robots, source, demands)
+
+        # 3) Recompute pivot + paths every N frames
+        if frame % RECOMPUTE_EVERY == 0:
+            compute_all_hops_and_totals(source, demands, robots, connections)
+            for r in robots:
+                vals = [v for v in getattr(r, 'demand_hops', {}).values() if v is not None]
+                r.hop_from_demand = min(vals) if vals else None
+
+            local_mins = find_local_minima(robots, connections, metric="total")
+            if local_mins:
+                pivot = min(local_mins, key=pivot_key)
+            else:
+                candidates = [r for r in robots if getattr(r, "total_overall", None) is not None]
+                pivot = min(candidates, key=pivot_key) if candidates else None
+
+            if pivot:
+                path_S = bfs_shortest_path(source, pivot, connections)
+                demand_paths = {d: bfs_shortest_path(d, pivot, connections) for d in demands}
+            else:
+                path_S = []
+                demand_paths = {d: [] for d in demands}
+
+            robots_in_union = set(n for n in path_S + sum(demand_paths.values(), []) if isinstance(n, Robot))
+
+        # 4) Draw
+        screen.fill((255, 255, 255))
+        source.draw(screen)
+        for d in demands:
+            d.draw(screen)
+
+        draw_poly(path_S, (255, 0, 0), 3)
+        for d, p in demand_paths.items():
+            draw_poly(p, (255, 0, 0), 3)
+
+        for rb in robots:
+            if rb in robots_in_union:
+                rb.draw(screen, color=(0, 200, 0))
+            else:
+                rb.draw(screen, color=(0, 100, 255))
+
+        pygame.display.flip()
+        clock.tick(30)
+        frame += 1
 
     pygame.quit()
 
