@@ -9,7 +9,7 @@ from class_source_and_demand import Source, Demand
 ARENA_WIDTH, ARENA_HEIGHT = 600,300
 ROBOT_RADIUS = 5
 N_ROBOTS = 120
-N_DEMANDS = 5
+N_DEMANDS = 2
 CONNECTION_DISTANCE = 120
 SENSE_RADIUS_R = 200        # big sensing radius (R)
 CONNECT_RADIUS_r = CONNECTION_DISTANCE  # connection radius (r)

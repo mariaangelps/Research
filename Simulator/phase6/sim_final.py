@@ -6,7 +6,7 @@ from class_robot import Robot
 from class_source_and_demand import Source, Demand
 from class_obs import Obstacle
 
-ARENA_WIDTH, ARENA_HEIGHT = 600, 300
+ARENA_WIDTH, ARENA_HEIGHT =900, 500
 ROBOT_RADIUS = 5
 N_ROBOTS = 45
 #N_EXTRA_ROBOTS = 10
