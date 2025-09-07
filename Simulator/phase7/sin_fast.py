@@ -573,7 +573,62 @@ def apply_sink_attraction(robots, demands, robots_in_union):
             rb.y += dy
 
 
+def fmt_inf(v):
+    return "∞" if v is None else str(v)
 
+def summarize_robot(r):
+    if r is None:
+        return "None"
+    parts = [f"id={r.robot_id}",
+             f"total={fmt_inf(getattr(r,'total_overall',None))}",
+             f"src={fmt_inf(getattr(r,'hop_from_source',None))}"]
+    # include per-demand hops if available
+    if hasattr(r, "demand_hops") and r.demand_hops:
+        dsum = ", ".join([f"{k}:{fmt_inf(v)}" for k, v in sorted(r.demand_hops.items())])
+        parts.append(f"demand_hops={{ {dsum} }}")
+    return " | ".join(parts)
+
+def top_pivot_candidates(robots, local_mins, k=5):
+    """
+    Returns up to k best pivot candidates (list of robots) according to pivot_key,
+    preferring local minima if available, else global candidates with finite totals.
+    """
+    if local_mins:
+        pool = list(local_mins)
+    else:
+        pool = [r for r in robots if getattr(r, "total_overall", None) is not None]
+    pool_sorted = sorted(pool, key=pivot_key)
+    return pool_sorted[:k]
+
+def log_pivot_change(prev_pivot, new_pivot, robots, local_mins):
+    changed = (prev_pivot is None and new_pivot is not None) or \
+              (prev_pivot is not None and new_pivot is None) or \
+              (prev_pivot is not None and new_pivot is not None and prev_pivot.robot_id != new_pivot.robot_id)
+    if not changed:
+        return
+
+    print("\n=== PIVOT CHANGED ===")
+    print("Prev:", summarize_robot(prev_pivot))
+    print("New :", summarize_robot(new_pivot))
+
+    # Show top ranked candidates and why they rank that way (tie-break visibility)
+    print("\nTop candidates by pivot_key (showing up to 5):")
+    cands = top_pivot_candidates(robots, local_mins, k=5)
+    for idx, r in enumerate(cands, 1):
+        total = getattr(r, "total_overall", None)
+        src   = getattr(r, "hop_from_source", None)
+        key_tup = pivot_key(r)   # (total, src, id)
+        print(f"  {idx}. id={r.robot_id} key={key_tup} total={fmt_inf(total)} src={fmt_inf(src)}")
+
+def draw_pivot_badge(screen, pivot, radius=12):
+    if pivot is None:
+        return
+    # halo around the pivot (gold ring)
+    pygame.draw.circle(screen, (255, 215, 0), (int(pivot.x), int(pivot.y)), radius + 6, 3)
+    # small label
+    font = pygame.font.Font(None, 20)
+    txt = font.render(f"PIVOT {pivot.robot_id}", True, (120, 90, 0))
+    screen.blit(txt, (pivot.x + 10, pivot.y - 18))
 
 def main():
     
@@ -789,6 +844,7 @@ def main():
 
     # ---- Idle loop: JUST draw (no recompute) ----
     running = True
+    prev_pivot = pivot
     """
     while running:
         for event in pygame.event.get():
@@ -839,12 +895,17 @@ def main():
                 vals = [v for v in getattr(r, 'demand_hops', {}).values() if v is not None]
                 r.hop_from_demand = min(vals) if vals else None
 
+            #recompute pivot
             local_mins = find_local_minima(robots, connections, metric="total")
             if local_mins:
                 pivot = min(local_mins, key=pivot_key)
             else:
                 candidates = [r for r in robots if getattr(r, "total_overall", None) is not None]
                 pivot = min(candidates, key=pivot_key) if candidates else None
+            
+            # --- #recompute pivot
+            log_pivot_change(prev_pivot, pivot, robots, local_mins)
+            prev_pivot = pivot
 
             if pivot:
                 path_S = bfs_shortest_path(source, pivot, connections)
@@ -870,6 +931,7 @@ def main():
                 rb.draw(screen, color=(0, 200, 0))
             else:
                 rb.draw(screen, color=(0, 100, 255))
+        draw_pivot_badge(screen, pivot)
 
         pygame.display.flip()
         clock.tick(30)
