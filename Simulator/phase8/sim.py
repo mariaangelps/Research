@@ -6,7 +6,7 @@ from class_robot import Robot
 from class_source_and_demand import Source, Demand
 # from class_obs import Obstacle  
 
-ARENA_WIDTH, ARENA_HEIGHT = 900,500
+ARENA_WIDTH, ARENA_HEIGHT = 800,300
 ROBOT_RADIUS = 5
 N_ROBOTS = 120
 N_DEMANDS = 25
@@ -15,7 +15,7 @@ SENSE_RADIUS_R = 200        # big sensing radius (R)
 CONNECT_RADIUS_r = CONNECTION_DISTANCE  # connection radius (r)
 STEP_MAX = 1.6              # max movement per frame 
 K_ATTR_ONPATH = 0.60        # attraction gain if robot is on the golden network
-K_ATTR_OFFPATH = 0.15       # weaker attraction if robot is outside
+K_ATTR_OFFPATH = 0.40       # weaker attraction if robot is outside
 RECOMPUTE_EVERY = 10        # recompute pivot + paths every N frames
 
 
@@ -30,7 +30,7 @@ class Node:
         self.color = color
 
     def draw(self, screen):
-        pygame.draw.circle(screen, self.color, (int(self.x), int(self.y)), 12)
+        pygame.draw.circle(screen, self.color, (int(self.x), int(self.y)), 7)
         font = pygame.font.Font(None, 24)
         label = font.render(self.name, True, (0, 0, 0))
         screen.blit(label, (self.x + 10, self.y - 10))
@@ -552,26 +552,40 @@ def rebuild_connections(robots, source, demands):
                 connect(rb, d, connections)
     return connections
 
-def apply_sink_attraction(robots, demands, robots_in_union):
+def apply_sink_attraction(robots, source, demands, robots_in_union):
     """
-    Virtual attraction to the closest sink, only if r < D < R.
-    - Robots on the golden network (robots_in_union): strong attraction.
-    - Robots outside but within the sensing ring: weaker attraction.
+    Role-based attraction:
+      - If robot ∈ golden network (robots_in_union): attract to nearest demand (strong).
+      - Else: attract to Source (weak).
+    Only pull if CONNECT_RADIUS_r < dist < SENSE_RADIUS_R (donut rule).
     """
     for rb in robots:
-        d, dist = nearest_demand_and_dist(rb, demands)
-        if d is None:
+        # target depends on role (on-chain vs off-chain)
+        if rb in robots_in_union:
+            target, dist = nearest_demand_and_dist(rb, demands)
+            if target is None:
+                continue
+            k = K_ATTR_ONPATH
+        else:
+            target = source
+            dist = math.hypot(rb.x - source.x, rb.y - source.y)
+            k = K_ATTR_OFFPATH
+
+        # donut: no pull if connected (<= r) or out of sense (>= R)
+        if not (CONNECT_RADIUS_r < dist < SENSE_RADIUS_R):
             continue
 
-        if CONNECT_RADIUS_r < dist < SENSE_RADIUS_R:
-            k = K_ATTR_ONPATH if rb in robots_in_union else K_ATTR_OFFPATH
-            vx = d.x - rb.x
-            vy = d.y - rb.y
-            fx = k * vx / (dist + 1e-6)
-            fy = k * vy / (dist + 1e-6)
-            dx, dy = clamp_step(fx, fy, STEP_MAX)
-            rb.x += dx
-            rb.y += dy
+        # normalized pull, limited by STEP_MAX
+        vx, vy = (target.x - rb.x), (target.y - rb.y)
+        fx, fy = k * vx / (dist + 1e-6), k * vy / (dist + 1e-6)
+        dx, dy = clamp_step(fx, fy, STEP_MAX)
+        rb.x += dx
+        rb.y += dy
+
+        # (opcional) mantén dentro del área
+        rb.x = max(0, min(ARENA_WIDTH, rb.x))
+        rb.y = max(0, min(ARENA_HEIGHT, rb.y))
+
 
 
 def fmt_inf(v):
@@ -640,13 +654,15 @@ def main():
 
     # ---- Nodes ----
     source = Node("Source", 50, ARENA_HEIGHT // 2, (255, 0, 0))
-    # ---- Demands (usa N_DEMANDS) ----
+    # ---- Demands (uses N_DEMANDS) ----
     demands = []
     for i in range(N_DEMANDS):
         name = f"D{i+1}"
         x = ARENA_WIDTH - 50
-        # espaciadas en vertical: 1..N_DEMANDS entre 50 y HEIGHT-50
-        y = int((i + 1) * ARENA_HEIGHT / (N_DEMANDS + 1))
+        # demands visualization
+        margin = 40
+        y = int(margin + (i * (ARENA_HEIGHT - 2*margin) / (N_DEMANDS-1)))
+
         demands.append(Node(name, x, y, (0, 128, 0)))
 
 
@@ -885,7 +901,7 @@ def main():
                 running = False
 
         # 1) Apply sink attraction (only after network is formed)
-        apply_sink_attraction(robots, demands, robots_in_union)
+        apply_sink_attraction(robots, source, demands, robots_in_union)
 
         # 2) Rebuild connections with updated positions
         connections = rebuild_connections(robots, source, demands)
