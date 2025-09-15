@@ -6,14 +6,14 @@ from class_robot import Robot
 from class_source_and_demand import Source, Demand
 # from class_obs import Obstacle  
 
-ARENA_WIDTH, ARENA_HEIGHT = 600,300
+ARENA_WIDTH, ARENA_HEIGHT = 900,500
 ROBOT_RADIUS = 5
 N_ROBOTS = 120
-N_DEMANDS = 2
+N_DEMANDS = 25
 CONNECTION_DISTANCE = 120
 SENSE_RADIUS_R = 200        # big sensing radius (R)
 CONNECT_RADIUS_r = CONNECTION_DISTANCE  # connection radius (r)
-STEP_MAX = 1.6              # max movement per frame (px)
+STEP_MAX = 1.6              # max movement per frame 
 K_ATTR_ONPATH = 0.60        # attraction gain if robot is on the golden network
 K_ATTR_OFFPATH = 0.15       # weaker attraction if robot is outside
 RECOMPUTE_EVERY = 10        # recompute pivot + paths every N frames
@@ -920,10 +920,6 @@ def main():
 
         # Range visually detected
         
-        """
-        for robot in robots:
-            pygame.draw.circle(screen, (180, 180, 180), (int(robot.x), int(robot.y)), CONNECTION_DISTANCE, 1)
-        """
         
         # 4) Draw
         screen.fill((255, 255, 255))
