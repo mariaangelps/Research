@@ -4,6 +4,7 @@ import math
 from collections import deque
 from class_robot import Robot
 from class_source_and_demand import Source, Demand
+import time
 # from class_obs import Obstacle  
 
 ARENA_WIDTH, ARENA_HEIGHT = 800,300
@@ -556,39 +557,59 @@ def rebuild_connections(robots, source, demands):
 
 def apply_sink_attraction(robots, demands, robots_in_union):
     """
-    En cadena  -> atraer al sink más cercano (si r < D < R) con K_ATTR_ONPATH.
-    Fuera cadena -> atraer al SOURCE_NODE (si r < D < R) con K_ATTR_OFFPATH.
+    Behavior:
+      • ON-PATH robots (in `robots_in_union`) are attracted to the nearest demand (sink)
+        using gain K_ATTR_ONPATH, but only if distance is within the donut band (r, R).
+      • OFF-PATH robots (not in `robots_in_union`) are attracted to the SOURCE_NODE
+        using gain K_ATTR_OFFPATH, also only within the donut band (r, R).
+
+    Donut rule:
+      Apply attraction only when CONNECT_RADIUS_r < distance_to_target < SENSE_RADIUS_R.
+      - Inside r: considered already connected → no pull (avoid jitter).
+      - Outside R: out of sensing range → no pull (avoid teleport-like jumps).
+
+    Notes:
+      - Movement per frame is clamped by STEP_MAX via `clamp_step` to keep motion stable.
+      - Positions are bounded to the arena to avoid drifting off-screen.
     """
     if SOURCE_NODE is None:
-        return  # por seguridad, aún no inicializado
+        return  # Safety: source not initialized yet
 
     for rb in robots:
         if rb in robots_in_union:
-            # --- on-path: pull to nearest demand ---
+            # ON-PATH: pull toward the nearest demand (sink)
             target, dist = nearest_demand_and_dist(rb, demands)
             if target is None:
-                continue
+                continue  # No demands (shouldn't happen), skip
             k = K_ATTR_ONPATH
         else:
-            # --- off-path: pull to SOURCE ---
+            # OFF-PATH: pull back toward the Source
             target = SOURCE_NODE
             dist = math.hypot(target.x - rb.x, target.y - rb.y)
             k = K_ATTR_OFFPATH
 
-        # donut rule
+        # Donut band: apply force only if r < dist < R
         if not (CONNECT_RADIUS_r < dist < SENSE_RADIUS_R):
             continue
 
-        # paso normalizado limitado por STEP_MAX
+        # Direction vector from robot to target
         vx, vy = (target.x - rb.x), (target.y - rb.y)
+
+        # Normalize by distance and scale by gain (k)
+        # + small epsilon to avoid division by zero when very close
         fx, fy = k * vx / (dist + 1e-6), k * vy / (dist + 1e-6)
+
+        # Limit per-frame displacement for stability
         dx, dy = clamp_step(fx, fy, STEP_MAX)
+
+        # Apply movement
         rb.x += dx
         rb.y += dy
 
-        # mantener dentro del área (opcional)
+        # Keep the robot inside the arena 
         rb.x = max(0, min(ARENA_WIDTH, rb.x))
         rb.y = max(0, min(ARENA_HEIGHT, rb.y))
+
 
 
 
@@ -961,6 +982,10 @@ def main():
         draw_pivot_badge(screen, pivot)
 
         pygame.display.flip()
+        if frame % 60 == 0:
+            fname = f"autosnap_{time.strftime('%Y%m%d_%H%M%S')}.png"
+            pygame.image.save(screen, fname)
+
         
         frame += 1
 
