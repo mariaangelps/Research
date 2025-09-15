@@ -17,6 +17,8 @@ STEP_MAX = 1.6              # max movement per frame
 K_ATTR_ONPATH = 0.60        # attraction gain if robot is on the golden network
 K_ATTR_OFFPATH = 0.40       # weaker attraction if robot is outside
 RECOMPUTE_EVERY = 10        # recompute pivot + paths every N frames
+SOURCE_NODE = None  # se setea en main() para uso dentro de apply_sink_attraction
+
 
 
 # obstacles removed entirely
@@ -552,37 +554,39 @@ def rebuild_connections(robots, source, demands):
                 connect(rb, d, connections)
     return connections
 
-def apply_sink_attraction(robots, source, demands, robots_in_union):
+def apply_sink_attraction(robots, demands, robots_in_union):
     """
-    Role-based attraction:
-      - If robot ∈ golden network (robots_in_union): attract to nearest demand (strong).
-      - Else: attract to Source (weak).
-    Only pull if CONNECT_RADIUS_r < dist < SENSE_RADIUS_R (donut rule).
+    En cadena  -> atraer al sink más cercano (si r < D < R) con K_ATTR_ONPATH.
+    Fuera cadena -> atraer al SOURCE_NODE (si r < D < R) con K_ATTR_OFFPATH.
     """
+    if SOURCE_NODE is None:
+        return  # por seguridad, aún no inicializado
+
     for rb in robots:
-        # target depends on role (on-chain vs off-chain)
         if rb in robots_in_union:
+            # --- on-path: pull to nearest demand ---
             target, dist = nearest_demand_and_dist(rb, demands)
             if target is None:
                 continue
             k = K_ATTR_ONPATH
         else:
-            target = source
-            dist = math.hypot(rb.x - source.x, rb.y - source.y)
+            # --- off-path: pull to SOURCE ---
+            target = SOURCE_NODE
+            dist = math.hypot(target.x - rb.x, target.y - rb.y)
             k = K_ATTR_OFFPATH
 
-        # donut: no pull if connected (<= r) or out of sense (>= R)
+        # donut rule
         if not (CONNECT_RADIUS_r < dist < SENSE_RADIUS_R):
             continue
 
-        # normalized pull, limited by STEP_MAX
+        # paso normalizado limitado por STEP_MAX
         vx, vy = (target.x - rb.x), (target.y - rb.y)
         fx, fy = k * vx / (dist + 1e-6), k * vy / (dist + 1e-6)
         dx, dy = clamp_step(fx, fy, STEP_MAX)
         rb.x += dx
         rb.y += dy
 
-        # (opcional) mantén dentro del área
+        # mantener dentro del área (opcional)
         rb.x = max(0, min(ARENA_WIDTH, rb.x))
         rb.y = max(0, min(ARENA_HEIGHT, rb.y))
 
@@ -654,6 +658,8 @@ def main():
 
     # ---- Nodes ----
     source = Node("Source", 50, ARENA_HEIGHT // 2, (255, 0, 0))
+    global SOURCE_NODE
+    SOURCE_NODE = source
     # ---- Demands (uses N_DEMANDS) ----
     demands = []
     for i in range(N_DEMANDS):
@@ -901,7 +907,7 @@ def main():
                 running = False
 
         # 1) Apply sink attraction (only after network is formed)
-        apply_sink_attraction(robots, source, demands, robots_in_union)
+        apply_sink_attraction(robots, demands, robots_in_union)
 
         # 2) Rebuild connections with updated positions
         connections = rebuild_connections(robots, source, demands)
