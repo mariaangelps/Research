@@ -864,7 +864,7 @@ def main():
             rb.draw(screen, color=(0, 100, 255))
 
     pygame.display.flip()
-    clock.tick(30)
+    
 
     # ---- Idle loop: JUST draw (no recompute) ----
     running = True
@@ -961,7 +961,7 @@ def main():
         draw_pivot_badge(screen, pivot)
 
         pygame.display.flip()
-        clock.tick(30)
+        
         frame += 1
 
     pygame.quit()
