@@ -23,7 +23,6 @@ K_LADDER = 0.8
 # === Debug reach logs ===
 DEMAND_FIRST_REACH = {}   # nombre_demand -> (robot_id, frame) del primer robot que llegó
 DEMAND_REACHERS   = {}    # nombre_demand -> set(robot_id) de todos los que han llegado
-ROBOTS_REACHED = set()
 
 
 
@@ -667,10 +666,9 @@ def apply_sink_attraction(robots, demands, robots_in_union, connections, current
                 if d_to_demand <= CONNECT_RADIUS_r:
                     # registra sin duplicar
                     from builtins import globals as _g  # por si el linter
-                    global DEMAND_FIRST_REACH, DEMAND_REACHERS,ROBOTS_REACHED
+                    global DEMAND_FIRST_REACH, DEMAND_REACHERS
                     if rb.robot_id not in DEMAND_REACHERS[nm]:
                         DEMAND_REACHERS[nm].add(rb.robot_id)
-                        ROBOTS_REACHED.add(rb.robot_id) 
                         if DEMAND_FIRST_REACH[nm] is None:
                             DEMAND_FIRST_REACH[nm] = (rb.robot_id, current_frame)
                             print(f"[REACHED-FIRST] {nm} reached by Robot {rb.robot_id} at frame {current_frame}")
@@ -687,11 +685,6 @@ def apply_sink_attraction(robots, demands, robots_in_union, connections, current
         rb.x = max(0, min(ARENA_WIDTH, rb.x + dx))
         rb.y = max(0, min(ARENA_HEIGHT, rb.y + dy))
 
-def has_direct_link(a, b, connections):
-    for x, y in connections:
-        if (x is a and y is b) or (x is b and y is a):
-            return True
-    return False
 
 
 def best_demand_for_robot(rb, demands):
@@ -1107,13 +1100,10 @@ def main():
             draw_poly(p, (255, 0, 0), 3)
 
         for rb in robots:
-            if rb.robot_id in ROBOTS_REACHED:
-                # Color especial para robots que alcanzaron (ej: morado)
-                rb.draw(screen, color=(160, 32, 240))
-            elif rb in robots_in_union:
-                rb.draw(screen, color=(0, 200, 0))   # on-path
+            if rb in robots_in_union:
+                rb.draw(screen, color=(0, 200, 0))
             else:
-                rb.draw(screen, color=(0, 100, 255)) # off-path
+                rb.draw(screen, color=(0, 100, 255))
         draw_pivot_badge(screen, pivot)
 
         pygame.display.flip()
