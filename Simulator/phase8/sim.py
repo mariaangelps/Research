@@ -18,7 +18,8 @@ STEP_MAX = 1.6              # max movement per frame
 K_ATTR_ONPATH = 0.60        # attraction gain if robot is on the golden network
 K_ATTR_OFFPATH = 0.40       # weaker attraction if robot is outside
 RECOMPUTE_EVERY = 10        # recompute pivot + paths every N frames
-SOURCE_NODE = None  # se setea en main() para uso dentro de apply_sink_attraction
+SOURCE_NODE = None  # se setea en main() para uso dentro de apply_sink_attraction5
+K_LADDER = 0.8
 
 
 
@@ -98,6 +99,39 @@ def propagate_local_hop_count(start_node, robots, connections, attr_hop, attr_pa
                     setattr(nxt, attr_hop, candidate)
                     setattr(nxt, attr_parent, cur)
 
+
+def spawn_demands_random(n, arena_w, arena_h, source, min_sep=45, margin=40, max_tries=5000):
+    """
+    Genera n demands en posiciones aleatorias del mapa, separadas al menos 'min_sep'
+    entre sí y con un margen de 'margin' a los bordes. Evita spawnear muy pegado al Source.
+    """
+    pts = []
+    tries = 0
+    while len(pts) < n and tries < max_tries:
+        tries += 1
+        x = random.randint(margin, arena_w - margin)
+        y = random.randint(margin, arena_h - margin)
+
+        # evita quedar demasiado cerca del source (para que no colisione visualmente)
+        if math.hypot(x - source.x, y - source.y) < min_sep * 1.5:
+            continue
+
+        # respeta separación mínima entre demands
+        ok = True
+        for (px, py) in pts:
+            if math.hypot(x - px, y - py) < min_sep:
+                ok = False
+                break
+        if ok:
+            pts.append((x, y))
+
+    # Si no alcanzó a separar todas (mapa muy lleno), rellena lo que falte sin separación estricta
+    while len(pts) < n:
+        x = random.randint(margin, arena_w - margin)
+        y = random.randint(margin, arena_h - margin)
+        pts.append((x, y))
+
+    return pts
 
 def is_path_exists(source, demands, robots, connections):
     """Return True if ALL demand nodes are reachable from Source."""
@@ -251,7 +285,7 @@ def build_optimal_path(start, end, robots, connections, hop_attr):
         if first and first != start and distance(start, first) <= CONNECTION_DISTANCE:
             path.insert(0, start)
     return path
-
+"""
 def build_path_after_repulsion(start, end, robots, connections, hop_attr):
     # identical to build_optimal_path but restricted to neighbors of current
     path = []
@@ -298,7 +332,7 @@ def build_path_after_repulsion(start, end, robots, connections, hop_attr):
         first = path[0] if path else None
         if first and distance(start, first) <= CONNECTION_DISTANCE:
             path.insert(0, start)
-    return path
+    return pat
 
 # Helper to inspect min total hops per demand; prints tie lengths and best robot scores
 def debug_global_choice(source, demands, robots, connections, best_demand):
@@ -320,7 +354,8 @@ def debug_global_choice(source, demands, robots, connections, best_demand):
             min_total = float('inf')
         rows.append((d.name, min_total, tie_len, None))
 
-    
+ """  
+ 
         
 def bfs_hops_from(start_node, robots, connections):
     """
@@ -501,7 +536,7 @@ def is_local_minimum(rb, connections, metric="total"):
     return True
 
 def find_local_minima(robots, connections, metric="total"):
-    """Return a list of robots that are local minima under the chosen metric."""
+    #Return a list of robots that are local minima under the chosen metric.
     return [r for r in robots if is_local_minimum(r, connections, metric=metric)]
 def pivot_key(r):
     """
@@ -555,7 +590,7 @@ def rebuild_connections(robots, source, demands):
                 connect(rb, d, connections)
     return connections
 
-def apply_sink_attraction(robots, demands, robots_in_union):
+def apply_sink_attraction(robots, demands, robots_in_union, connections):
     """
     Behavior:
       • ON-PATH robots (in `robots_in_union`) are attracted to the nearest demand (sink)
@@ -573,43 +608,99 @@ def apply_sink_attraction(robots, demands, robots_in_union):
       - Positions are bounded to the arena to avoid drifting off-screen.
     """
     if SOURCE_NODE is None:
-        return  # Safety: source not initialized yet
+        return
 
     for rb in robots:
+        # === Selección de objetivo principal (target) ===
         if rb in robots_in_union:
-            # ON-PATH: pull toward the nearest demand (sink)
-            target, dist = nearest_demand_and_dist(rb, demands)
-            if target is None:
-                continue  # No demands (shouldn't happen), skip
-            k = K_ATTR_ONPATH
+            # Demanda “correcta” por hops
+            target_d, my_h = best_demand_for_robot(rb, demands)
+            if target_d is None:
+                # sin info de hops → cae al comportamiento viejo (nearest)
+                target_d, _ = nearest_demand_and_dist(rb, demands)
+            target = target_d
+            k_main  = K_ATTR_ONPATH
         else:
-            # OFF-PATH: pull back toward the Source
             target = SOURCE_NODE
-            dist = math.hypot(target.x - rb.x, target.y - rb.y)
-            k = K_ATTR_OFFPATH
+            k_main = K_ATTR_OFFPATH
 
-        # Donut band: apply force only if r < dist < R
-        if not (CONNECT_RADIUS_r < dist < SENSE_RADIUS_R):
-            continue
+        # --- Fuerza principal hacia target (si respeta el donut) ---
+        dist = math.hypot(target.x - rb.x, target.y - rb.y)
+        if CONNECT_RADIUS_r < dist < SENSE_RADIUS_R:
+            vx, vy = (target.x - rb.x), (target.y - rb.y)
+            fx, fy = k_main * vx / (dist + 1e-6), k_main * vy / (dist + 1e-6)
+        else:
+            fx = fy = 0.0
 
-        # Direction vector from robot to target
-        vx, vy = (target.x - rb.x), (target.y - rb.y)
+        # --- “Subir la escalera” (solo si estoy en cadena y tengo gradiente de hops) ---
+        if rb in robots_in_union:
+            d_best, _ = best_demand_for_robot(rb, demands)
+            dname = d_best.name if d_best else None
+            nxt = neighbor_with_lower_hop_to_demand(rb, dname, connections)
 
-        # Normalize by distance and scale by gain (k)
-        # + small epsilon to avoid division by zero when very close
-        fx, fy = k * vx / (dist + 1e-6), k * vy / (dist + 1e-6)
+            if nxt is not None:
+                # empuje hacia el vecino con menor hop
+                dx, dy = (nxt.x - rb.x), (nxt.y - rb.y)
+                mag = math.hypot(dx, dy)
+                if mag > 1e-9:
+                    fx += K_LADDER * dx / mag
+                    fy += K_LADDER * dy / mag
+            else:
+                # *** Fallback de endpoint: empuja directo a la demanda incluso si dist ≤ r o dist ≥ R
+                if d_best is not None:
+                    vx2, vy2 = (d_best.x - rb.x), (d_best.y - rb.y)
+                    dist2 = math.hypot(vx2, vy2)
+                    if dist2 > 1e-6:   # ignora el donut para este empujón
+                        fx += K_LADDER * vx2 / dist2
+                        fy += K_LADDER * vy2 / dist2
 
-        # Limit per-frame displacement for stability
+        # --- Clamp y aplicar movimiento ---
         dx, dy = clamp_step(fx, fy, STEP_MAX)
+        rb.x = max(0, min(ARENA_WIDTH, rb.x + dx))
+        rb.y = max(0, min(ARENA_HEIGHT, rb.y + dy))
 
-        # Apply movement
-        rb.x += dx
-        rb.y += dy
 
-        # Keep the robot inside the arena 
-        rb.x = max(0, min(ARENA_WIDTH, rb.x))
-        rb.y = max(0, min(ARENA_HEIGHT, rb.y))
 
+def best_demand_for_robot(rb, demands):
+    """
+    Devuelve (demand, hops) donde 'demand' minimiza los hops desde esa demanda al robot.
+    Si el robot no tiene hops válidos a ninguna demanda, retorna (None, None).
+    """
+    if not hasattr(rb, "demand_hops") or not rb.demand_hops:
+        return (None, None)
+    best_nm, best_h = None, None
+    for d in demands:
+        hv = rb.demand_hops.get(d.name, None)
+        if hv is None:
+            continue
+        if best_h is None or hv < best_h:
+            best_nm, best_h = d.name, hv
+    if best_nm is None:
+        return (None, None)
+    # encuentra el objeto demanda por nombre
+    for d in demands:
+        if d.name == best_nm:
+            return (d, best_h)
+    return (None, None)
+
+def neighbor_with_lower_hop_to_demand(rb, demand_name, connections):
+    if demand_name is None:
+        return None
+    my_h = rb.demand_hops.get(demand_name, None)
+    if my_h is None:
+        return None
+
+    cand = []
+    for nb in robot_neighbors(rb, connections):
+        dh = getattr(nb, "demand_hops", {}).get(demand_name, None)
+        if dh is not None and dh < my_h:
+            dgeom = math.hypot(nb.x - rb.x, nb.y - rb.y)
+            cand.append((dh, dgeom, nb.robot_id, nb))
+    if not cand:
+        return None
+    # menor hop → más cercano → menor id
+    cand.sort(key=lambda t: (t[0], t[1], t[2]))
+    return cand[0][3]
 
 
 
@@ -683,14 +774,14 @@ def main():
     SOURCE_NODE = source
     # ---- Demands (uses N_DEMANDS) ----
     demands = []
-    for i in range(N_DEMANDS):
+    demand_positions = spawn_demands_random(
+        N_DEMANDS, ARENA_WIDTH, ARENA_HEIGHT, source,
+        min_sep=45,   # más grande = más separados
+        margin=40     # margen a los bordes
+    )
+    for i, (dx, dy) in enumerate(demand_positions):
         name = f"D{i+1}"
-        x = ARENA_WIDTH - 50
-        # demands visualization
-        margin = 40
-        y = int(margin + (i * (ARENA_HEIGHT - 2*margin) / (N_DEMANDS-1)))
-
-        demands.append(Node(name, x, y, (0, 128, 0)))
+        demands.append(Node(name, dx, dy, (0, 128, 0)))
 
 
     # ---- Robots (random once) ----
@@ -928,7 +1019,8 @@ def main():
                 running = False
 
         # 1) Apply sink attraction (only after network is formed)
-        apply_sink_attraction(robots, demands, robots_in_union)
+        apply_sink_attraction(robots, demands, robots_in_union, connections)
+
 
         # 2) Rebuild connections with updated positions
         connections = rebuild_connections(robots, source, demands)
@@ -982,9 +1074,7 @@ def main():
         draw_pivot_badge(screen, pivot)
 
         pygame.display.flip()
-        if frame % 60 == 0:
-            fname = f"autosnap_{time.strftime('%Y%m%d_%H%M%S')}.png"
-            pygame.image.save(screen, fname)
+        
 
         
         frame += 1

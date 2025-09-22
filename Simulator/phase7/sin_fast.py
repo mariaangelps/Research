@@ -34,6 +34,38 @@ class Node:
         font = pygame.font.Font(None, 24)
         label = font.render(self.name, True, (0, 0, 0))
         screen.blit(label, (self.x + 10, self.y - 10))
+def spawn_demands_random(n, arena_w, arena_h, source, min_sep=45, margin=40, max_tries=5000):
+    """
+    Genera n demands en posiciones aleatorias del mapa, separadas al menos 'min_sep'
+    entre sí y con un margen de 'margin' a los bordes. Evita spawnear muy pegado al Source.
+    """
+    pts = []
+    tries = 0
+    while len(pts) < n and tries < max_tries:
+        tries += 1
+        x = random.randint(margin, arena_w - margin)
+        y = random.randint(margin, arena_h - margin)
+
+        # evita quedar demasiado cerca del source (para que no colisione visualmente)
+        if math.hypot(x - source.x, y - source.y) < min_sep * 1.5:
+            continue
+
+        # respeta separación mínima entre demands
+        ok = True
+        for (px, py) in pts:
+            if math.hypot(x - px, y - py) < min_sep:
+                ok = False
+                break
+        if ok:
+            pts.append((x, y))
+
+    # Si no alcanzó a separar todas (mapa muy lleno), rellena lo que falte sin separación estricta
+    while len(pts) < n:
+        x = random.randint(margin, arena_w - margin)
+        y = random.randint(margin, arena_h - margin)
+        pts.append((x, y))
+
+    return pts
 
 def distance(a, b):
     return math.hypot(a.x - b.x, a.y - b.y)
@@ -641,13 +673,16 @@ def main():
     # ---- Nodes ----
     source = Node("Source", 50, ARENA_HEIGHT // 2, (255, 0, 0))
     # ---- Demands (usa N_DEMANDS) ----
+        # ---- Demands (random en todo el mapa) ----
     demands = []
-    for i in range(N_DEMANDS):
+    demand_positions = spawn_demands_random(
+        N_DEMANDS, ARENA_WIDTH, ARENA_HEIGHT, source,
+        min_sep=45,   # más grande = más separados
+        margin=40     # margen a los bordes
+    )
+    for i, (dx, dy) in enumerate(demand_positions):
         name = f"D{i+1}"
-        x = ARENA_WIDTH - 50
-        # espaciadas en vertical: 1..N_DEMANDS entre 50 y HEIGHT-50
-        y = int((i + 1) * ARENA_HEIGHT / (N_DEMANDS + 1))
-        demands.append(Node(name, x, y, (0, 128, 0)))
+        demands.append(Node(name, dx, dy, (0, 128, 0)))
 
 
     # ---- Robots (random once) ----
