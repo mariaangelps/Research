@@ -23,6 +23,8 @@ K_LADDER = 0.8
 # === Debug reach logs ===
 DEMAND_FIRST_REACH = {}   # nombre_demand -> (robot_id, frame) first robot arrived
 DEMAND_REACHERS   = {}    # nombre_demand -> set(robot_id) of all reached
+PURPLE_FRAMES = 10  # frames to stay purple before removal
+
 
 
 # obstacles removed entirely
@@ -77,17 +79,28 @@ def check_and_color_robots(robots, demands, frame=None):
 
 """
 def remove_robots_at_demands(robots, demands, frame=None):
-    """Elimina de la lista los robots que lleguen a cualquier demand."""
+    """Pone morado a los que llegan y los elimina tras PURPLE_FRAMES."""
     global DEMAND_FIRST_REACH, DEMAND_REACHERS
 
     survivors = []
     for r in robots:
-        removed = False
-        for d in demands:
-            d_rad = getattr(d, "radius", 12)
-            if math.hypot(r.x - d.x, r.y - d.y) <= d_rad + ROBOT_RADIUS:
-                # Log opcional
-                if frame is not None:
+        # ¿ya está programado para borrar?
+        remove_at = getattr(r, "remove_at", None)
+        if remove_at is not None and frame >= remove_at:
+            # ya cumplió su pausa morada → NO lo conservamos
+            continue
+
+        # si aún no está programado, revisa si tocó alguna demand
+        if remove_at is None:
+            for d in demands:
+                d_rad = getattr(d, "radius", 12)
+                if math.hypot(r.x - d.x, r.y - d.y) <= d_rad + ROBOT_RADIUS:
+                    # 1) morado inmediato
+                    r.at_demand = True
+                    # 2) programar eliminación
+                    r.remove_at = frame + PURPLE_FRAMES
+
+                    # --- logging consistente (opcional) ---
                     nm = d.name
                     DEMAND_REACHERS.setdefault(nm, set())
                     DEMAND_FIRST_REACH.setdefault(nm, None)
@@ -98,10 +111,9 @@ def remove_robots_at_demands(robots, demands, frame=None):
                             print(f"[REACHED-FIRST] {nm} reached by Robot {r.robot_id} at frame {frame}")
                         else:
                             print(f"[REACHED] {nm} also reached by Robot {r.robot_id} at frame {frame}")
-                removed = True
-                break
-        if not removed:
-            survivors.append(r)
+                    break  # ya no cheques otras demands
+
+        survivors.append(r)
     return survivors
 
 def distance(a, b):
