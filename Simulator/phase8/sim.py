@@ -8,9 +8,9 @@ import time
 # from class_obs import Obstacle  
 
 ARENA_WIDTH, ARENA_HEIGHT = 800,300
-ROBOT_RADIUS = 5
+ROBOT_RADIUS = 6 
 N_ROBOTS = 120
-N_DEMANDS = 25
+N_DEMANDS = 5
 CONNECTION_DISTANCE = 120
 SENSE_RADIUS_R = 200        # big sensing radius (R)
 CONNECT_RADIUS_r = CONNECTION_DISTANCE  # connection radius (r)
@@ -27,17 +27,31 @@ K_LADDER = 0.8
 obstacles = []  # keep empty so nothing references it
 
 class Node:
-    def __init__(self, name, x, y, color):
+    def __init__(self, name, x, y, color, radius=9):
         self.name = name
         self.x = x
         self.y = y
         self.color = color
+        self.radius = radius
 
     def draw(self, screen):
-        pygame.draw.circle(screen, self.color, (int(self.x), int(self.y)), 7)
+        pygame.draw.circle(screen, self.color, (int(self.x), int(self.y)), self.radius)
         font = pygame.font.Font(None, 24)
         label = font.render(self.name, True, (0, 0, 0))
         screen.blit(label, (self.x + 10, self.y - 10))
+
+def check_and_color_robots(robots, demands):
+    """Marca permanentemente (at_demand=True) al robot que toque cualquier demand."""
+    for r in robots:
+        # si ya llegó antes, no revisamos más
+        if getattr(r, "at_demand", False):
+            continue
+        for d in demands:
+            # usa el radio real del nodo + radio del robot
+            d_rad = getattr(d, "radius", 12)
+            if math.hypot(r.x - d.x, r.y - d.y) <= d_rad + ROBOT_RADIUS:
+                r.at_demand = True
+                break
 
 def distance(a, b):
     return math.hypot(a.x - b.x, a.y - b.y)
@@ -1056,6 +1070,8 @@ def main():
             robots_in_union = set(n for n in path_S + sum(demand_paths.values(), []) if isinstance(n, Robot))
 
         # Range visually detected
+        check_and_color_robots(robots, demands)
+
         
         
         # 4) Draw
@@ -1069,10 +1085,12 @@ def main():
             draw_poly(p, (255, 0, 0), 3)
 
         for rb in robots:
-            if rb in robots_in_union:
-                rb.draw(screen, color=(0, 200, 0))
+            if getattr(rb, "at_demand", False):
+                rb.draw(screen, color=(128, 0, 128))             # morado si ya llegó
+            elif rb in robots_in_union:
+                rb.draw(screen, color=(0, 200, 0))        # verde (en cadena dorada)
             else:
-                rb.draw(screen, color=(0, 100, 255))
+                rb.draw(screen, color=(0, 100, 255))  
         draw_pivot_badge(screen, pivot)
 
         pygame.display.flip()
