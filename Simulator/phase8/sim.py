@@ -617,76 +617,79 @@ def apply_sink_attraction(robots, demands, robots_in_union, connections, current
         return
 
     for rb in robots:
-        # === Selección de objetivo principal (target) ===
+        # Si ya llegó antes, no lo muevas más.
+        if getattr(rb, "reached", False):
+            continue
+
+        # === Target principal ===
         if rb in robots_in_union:
-            # Demanda “correcta” por hops
-            target_d, my_h = best_demand_for_robot(rb, demands)
-            if target_d is None:
-                # sin info de hops → cae al comportamiento viejo (nearest)
-                target_d, _ = nearest_demand_and_dist(rb, demands)
-            target = target_d
-            k_main  = K_ATTR_ONPATH
+            d_best, _ = best_demand_for_robot(rb, demands)
+            if d_best is None:
+                d_best, _ = nearest_demand_and_dist(rb, demands)
+            target = d_best
+            k_main = K_ATTR_ONPATH
         else:
             target = SOURCE_NODE
+            d_best = None
             k_main = K_ATTR_OFFPATH
 
-        # --- Fuerza principal hacia target (si respeta el donut) ---
+        # --- Chequeo de llegada literal (IFF) ---
+        if rb in robots_in_union and isinstance(target, Node) and target in demands:
+            dist2d = math.hypot(target.x - rb.x, target.y - rb.y)
+            if dist2d <= REACH_EPS:
+                # Marcar alcanzado y fijarlo en la demanda
+                rb.reached = True
+
+                # Logs/estadísticas
+                global ROBOTS_REACHED, DEMAND_REACHERS, DEMAND_FIRST_REACH
+                ROBOTS_REACHED.add(rb.robot_id)
+
+                if target.name not in DEMAND_REACHERS:
+                    DEMAND_REACHERS[target.name] = set()
+                if target.name not in DEMAND_FIRST_REACH:
+                    DEMAND_FIRST_REACH[target.name] = None
+
+                if rb.robot_id not in DEMAND_REACHERS[target.name]:
+                    DEMAND_REACHERS[target.name].add(rb.robot_id)
+                    if DEMAND_FIRST_REACH[target.name] is None:
+                        DEMAND_FIRST_REACH[target.name] = (rb.robot_id, current_frame)
+                        print(f"[REACHED-FIRST] {target.name} reached by Robot {rb.robot_id} at frame {current_frame}")
+                    else:
+                        print(f"[REACHED] {target.name} also reached by Robot {rb.robot_id} at frame {current_frame}")
+
+                    # Resumen cuando todas tienen primer alcanzador
+                    if all(v is not None for v in DEMAND_FIRST_REACH.values()):
+                        summary = {k: f"robot {v[0]} @frame {v[1]}" for k, v in DEMAND_FIRST_REACH.items()}
+                        print("[SUMMARY] First reach per demand:", summary)
+
+                # No apliques fuerzas este frame
+                continue
+
+        # --- Fuerza principal (donut r..R) ---
+        fx = fy = 0.0
         dist = math.hypot(target.x - rb.x, target.y - rb.y)
         if CONNECT_RADIUS_r < dist < SENSE_RADIUS_R:
             vx, vy = (target.x - rb.x), (target.y - rb.y)
             fx, fy = k_main * vx / (dist + 1e-6), k_main * vy / (dist + 1e-6)
-        else:
-            fx = fy = 0.0
 
-        # --- “Subir la escalera” (solo si estoy en cadena y tengo gradiente de hops) ---
-        if rb in robots_in_union:
-            d_best, _ = best_demand_for_robot(rb, demands)
-            dname = d_best.name if d_best else None
-            nxt = neighbor_with_lower_hop_to_demand(rb, dname, connections)
-
+        # --- “Escalera” por hops (solo on-path) ---
+        if rb in robots_in_union and d_best is not None:
+            nxt = neighbor_with_lower_hop_to_demand(rb, d_best.name, connections)
             if nxt is not None:
-                # empuje hacia el vecino con menor hop
                 dx, dy = (nxt.x - rb.x), (nxt.y - rb.y)
                 mag = math.hypot(dx, dy)
                 if mag > 1e-9:
                     fx += K_LADDER * dx / mag
                     fy += K_LADDER * dy / mag
             else:
-                # *** Fallback de endpoint: empuja directo a la demanda incluso si dist ≤ r o dist ≥ R
-                if d_best is not None:
-                    vx2, vy2 = (d_best.x - rb.x), (d_best.y - rb.y)
-                    dist2 = math.hypot(vx2, vy2)
-                    if dist2 > 1e-6:   # ignora el donut para este empujón
-                        fx += K_LADDER * vx2 / dist2
-                        fy += K_LADDER * vy2 / dist2
+                # endpoint: empuje suave directo (sin donut) hacia la demanda
+                vx2, vy2 = (d_best.x - rb.x), (d_best.y - rb.y)
+                mag2 = math.hypot(vx2, vy2)
+                if mag2 > 1e-6:
+                    fx += K_LADDER * vx2 / mag2
+                    fy += K_LADDER * vy2 / mag2
 
-            
-            # >>> DEBUG REACH <<<
-            if d_best is not None:
-                nm = d_best.name
-                """"
-                d_to_demand = math.hypot(d_best.x - rb.x, d_best.y - rb.y)
-                if d_to_demand <= CONNECT_RADIUS_r:
-                """
-                if has_direct_link(rb, d_best, connections):
-                    # registra sin duplicar
-                    from builtins import globals as _g  # por si el linter
-                    global DEMAND_FIRST_REACH, DEMAND_REACHERS,ROBOTS_REACHED
-                    if rb.robot_id not in DEMAND_REACHERS[nm]:
-                        DEMAND_REACHERS[nm].add(rb.robot_id)
-                        ROBOTS_REACHED.add(rb.robot_id) 
-                        if DEMAND_FIRST_REACH[nm] is None:
-                            DEMAND_FIRST_REACH[nm] = (rb.robot_id, current_frame)
-                            print(f"[REACHED-FIRST] {nm} reached by Robot {rb.robot_id} at frame {current_frame}")
-                        else:
-                            print(f"[REACHED] {nm} also reached by Robot {rb.robot_id} at frame {current_frame}")
-                        # (opcional) resumen cuando todas tienen primer alcanzador
-                        if all(DEMAND_FIRST_REACH[k] is not None for k in DEMAND_FIRST_REACH):
-                            summary = {k: f"robot {v[0]} @frame {v[1]}" for k, v in DEMAND_FIRST_REACH.items()}
-                            print("[SUMMARY] First reach per demand:", summary)
-            # <<< FIN DEBUG >>>
-
-        # --- Clamp y aplicar movimiento ---
+        # --- Movimiento con clamp ---
         dx, dy = clamp_step(fx, fy, STEP_MAX)
         rb.x = max(0, min(ARENA_WIDTH, rb.x + dx))
         rb.y = max(0, min(ARENA_HEIGHT, rb.y + dy))
