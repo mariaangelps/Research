@@ -10,7 +10,7 @@ import time
 ARENA_WIDTH, ARENA_HEIGHT = 800,300
 ROBOT_RADIUS = 5
 N_ROBOTS = 120
-N_DEMANDS = 25
+N_DEMANDS = 5
 CONNECTION_DISTANCE = 120
 SENSE_RADIUS_R = 200        # big sensing radius (R)
 CONNECT_RADIUS_r = CONNECTION_DISTANCE  # connection radius (r)
@@ -20,6 +20,11 @@ K_ATTR_OFFPATH = 0.40       # weaker attraction if robot is outside
 RECOMPUTE_EVERY = 10        # recompute pivot + paths every N frames
 SOURCE_NODE = None  # se setea en main() para uso dentro de apply_sink_attraction5
 K_LADDER = 0.8
+# === Debug reach logs ===
+DEMAND_FIRST_REACH = {}   # nombre_demand -> (robot_id, frame) del primer robot que llegó
+DEMAND_REACHERS   = {}    # nombre_demand -> set(robot_id) de todos los que han llegado
+ROBOTS_REACHED = set()
+REACH_EPS = 8  # distancia real para considerar que tocó la demanda
 
 
 
@@ -590,7 +595,8 @@ def rebuild_connections(robots, source, demands):
                 connect(rb, d, connections)
     return connections
 
-def apply_sink_attraction(robots, demands, robots_in_union, connections):
+def apply_sink_attraction(robots, demands, robots_in_union, connections, current_frame=None):
+
     """
     Behavior:
       • ON-PATH robots (in `robots_in_union`) are attracted to the nearest demand (sink)
@@ -654,11 +660,42 @@ def apply_sink_attraction(robots, demands, robots_in_union, connections):
                         fx += K_LADDER * vx2 / dist2
                         fy += K_LADDER * vy2 / dist2
 
+            
+            # >>> DEBUG REACH <<<
+            if d_best is not None:
+                nm = d_best.name
+                """"
+                d_to_demand = math.hypot(d_best.x - rb.x, d_best.y - rb.y)
+                if d_to_demand <= CONNECT_RADIUS_r:
+                """
+                if has_direct_link(rb, d_best, connections):
+                    # registra sin duplicar
+                    from builtins import globals as _g  # por si el linter
+                    global DEMAND_FIRST_REACH, DEMAND_REACHERS,ROBOTS_REACHED
+                    if rb.robot_id not in DEMAND_REACHERS[nm]:
+                        DEMAND_REACHERS[nm].add(rb.robot_id)
+                        ROBOTS_REACHED.add(rb.robot_id) 
+                        if DEMAND_FIRST_REACH[nm] is None:
+                            DEMAND_FIRST_REACH[nm] = (rb.robot_id, current_frame)
+                            print(f"[REACHED-FIRST] {nm} reached by Robot {rb.robot_id} at frame {current_frame}")
+                        else:
+                            print(f"[REACHED] {nm} also reached by Robot {rb.robot_id} at frame {current_frame}")
+                        # (opcional) resumen cuando todas tienen primer alcanzador
+                        if all(DEMAND_FIRST_REACH[k] is not None for k in DEMAND_FIRST_REACH):
+                            summary = {k: f"robot {v[0]} @frame {v[1]}" for k, v in DEMAND_FIRST_REACH.items()}
+                            print("[SUMMARY] First reach per demand:", summary)
+            # <<< FIN DEBUG >>>
+
         # --- Clamp y aplicar movimiento ---
         dx, dy = clamp_step(fx, fy, STEP_MAX)
         rb.x = max(0, min(ARENA_WIDTH, rb.x + dx))
         rb.y = max(0, min(ARENA_HEIGHT, rb.y + dy))
 
+def has_direct_link(a, b, connections):
+    for x, y in connections:
+        if (x is a and y is b) or (x is b and y is a):
+            return True
+    return False
 
 
 def best_demand_for_robot(rb, demands):
@@ -782,6 +819,10 @@ def main():
     for i, (dx, dy) in enumerate(demand_positions):
         name = f"D{i+1}"
         demands.append(Node(name, dx, dy, (0, 128, 0)))
+    # init reach logs
+    global DEMAND_FIRST_REACH, DEMAND_REACHERS
+    DEMAND_FIRST_REACH = {d.name: None for d in demands}
+    DEMAND_REACHERS   = {d.name: set()  for d in demands}
 
 
     # ---- Robots (random once) ----
@@ -817,6 +858,8 @@ def main():
             x = random.randint(80, ARENA_WIDTH - 80)
             y = random.randint(60, ARENA_HEIGHT - 60)
             robots.append(Robot(i, x, y, ROBOT_RADIUS))
+        for r in robots:
+            r.settled = False 
         # ---- Build connections ONCE (simple O(n²)) ----
         connections = []
         # robot–robot
@@ -1019,7 +1062,8 @@ def main():
                 running = False
 
         # 1) Apply sink attraction (only after network is formed)
-        apply_sink_attraction(robots, demands, robots_in_union, connections)
+        apply_sink_attraction(robots, demands, robots_in_union, connections, frame)
+
 
 
         # 2) Rebuild connections with updated positions
@@ -1067,10 +1111,13 @@ def main():
             draw_poly(p, (255, 0, 0), 3)
 
         for rb in robots:
-            if rb in robots_in_union:
-                rb.draw(screen, color=(0, 200, 0))
+            if rb.robot_id in ROBOTS_REACHED:
+                # Color especial para robots que alcanzaron (ej: morado)
+                rb.draw(screen, color=(160, 32, 240))
+            elif rb in robots_in_union:
+                rb.draw(screen, color=(0, 200, 0))   # on-path
             else:
-                rb.draw(screen, color=(0, 100, 255))
+                rb.draw(screen, color=(0, 100, 255)) # off-path
         draw_pivot_badge(screen, pivot)
 
         pygame.display.flip()
