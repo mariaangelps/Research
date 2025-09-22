@@ -10,7 +10,7 @@ import time
 ARENA_WIDTH, ARENA_HEIGHT = 800,300
 ROBOT_RADIUS = 6 
 N_ROBOTS = 120
-N_DEMANDS = 5
+N_DEMANDS = 25
 CONNECTION_DISTANCE = 120
 SENSE_RADIUS_R = 200        # big sensing radius (R)
 CONNECT_RADIUS_r = CONNECTION_DISTANCE  # connection radius (r)
@@ -42,18 +42,39 @@ class Node:
         label = font.render(self.name, True, (0, 0, 0))
         screen.blit(label, (self.x + 10, self.y - 10))
 
-def check_and_color_robots(robots, demands):
-    """Marca permanentemente (at_demand=True) al robot que toque cualquier demand."""
+def check_and_color_robots(robots, demands, frame=None):
+    """Marca at_demand=True y loguea SOLO cuando realmente toca la demand."""
+    global DEMAND_FIRST_REACH, DEMAND_REACHERS
+
     for r in robots:
-        # si ya llegó antes, no revisamos más
         if getattr(r, "at_demand", False):
             continue
         for d in demands:
-            # usa el radio real del nodo + radio del robot
             d_rad = getattr(d, "radius", 12)
             if math.hypot(r.x - d.x, r.y - d.y) <= d_rad + ROBOT_RADIUS:
+                # Se vuelve morado aquí
                 r.at_demand = True
-                break
+
+                # Logging consistente con el morado
+                if frame is not None:
+                    nm = d.name
+                    DEMAND_REACHERS.setdefault(nm, set())
+                    DEMAND_FIRST_REACH.setdefault(nm, None)
+
+                    if r.robot_id not in DEMAND_REACHERS[nm]:
+                        DEMAND_REACHERS[nm].add(r.robot_id)
+                        if DEMAND_FIRST_REACH[nm] is None:
+                            DEMAND_FIRST_REACH[nm] = (r.robot_id, frame)
+                            print(f"[REACHED-FIRST] {nm} reached by Robot {r.robot_id} at frame {frame}")
+                        else:
+                            print(f"[REACHED] {nm} also reached by Robot {r.robot_id} at frame {frame}")
+
+                        # (opcional) resumen cuando todas tengan primero
+                        if all(DEMAND_FIRST_REACH[k] is not None for k in DEMAND_FIRST_REACH):
+                            summary = {k: f"robot {v[0]} @frame {v[1]}" for k, v in DEMAND_FIRST_REACH.items()}
+                            print("[SUMMARY] First reach per demand:", summary)
+                break  # no sigas chequeando más demands para este robot
+
 
 def distance(a, b):
     return math.hypot(a.x - b.x, a.y - b.y)
@@ -669,26 +690,7 @@ def apply_sink_attraction(robots, demands, robots_in_union, connections,current_
                     if dist2 > 1e-6:   # ignora el donut para este empujón
                         fx += K_LADDER * vx2 / dist2
                         fy += K_LADDER * vy2 / dist2
-            # >>> DEBUG REACH <<<
-            if d_best is not None:
-                nm = d_best.name
-                d_to_demand = math.hypot(d_best.x - rb.x, d_best.y - rb.y)
-                if d_to_demand <= CONNECT_RADIUS_r:
-                    # registra sin duplicar
-                    from builtins import globals as _g  # por si el linter
-                    global DEMAND_FIRST_REACH, DEMAND_REACHERS
-                    if rb.robot_id not in DEMAND_REACHERS[nm]:
-                        DEMAND_REACHERS[nm].add(rb.robot_id)
-                        if DEMAND_FIRST_REACH[nm] is None:
-                            DEMAND_FIRST_REACH[nm] = (rb.robot_id, current_frame)
-                            print(f"[REACHED-FIRST] {nm} reached by Robot {rb.robot_id} at frame {current_frame}")
-                        else:
-                            print(f"[REACHED] {nm} also reached by Robot {rb.robot_id} at frame {current_frame}")
-                        # (opcional) resumen cuando todas tienen primer alcanzador
-                        if all(DEMAND_FIRST_REACH[k] is not None for k in DEMAND_FIRST_REACH):
-                            summary = {k: f"robot {v[0]} @frame {v[1]}" for k, v in DEMAND_FIRST_REACH.items()}
-                            print("[SUMMARY] First reach per demand:", summary)
-            # <<< FIN DEBUG >>>
+            
         # --- Clamp y aplicar movimiento ---
         dx, dy = clamp_step(fx, fy, STEP_MAX)
         rb.x = max(0, min(ARENA_WIDTH, rb.x + dx))
@@ -1095,7 +1097,8 @@ def main():
             robots_in_union = set(n for n in path_S + sum(demand_paths.values(), []) if isinstance(n, Robot))
 
         # Range visually detected
-        check_and_color_robots(robots, demands)
+        check_and_color_robots(robots, demands, frame)
+
 
         
         
