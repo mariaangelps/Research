@@ -6,7 +6,7 @@ from class_robot import Robot
 from class_source_and_demand import Source, Demand
 import time
 # from class_obs import Obstacle  
-
+# turns purple and gets rid of them
 ARENA_WIDTH, ARENA_HEIGHT = 800,300
 ROBOT_RADIUS = 6 
 N_ROBOTS = 120
