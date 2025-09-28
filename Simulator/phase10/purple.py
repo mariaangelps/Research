@@ -6,11 +6,11 @@ from class_robot import Robot
 from class_source_and_demand import Source, Demand
 import time
 # from class_obs import Obstacle  
-# turns purple and gets rid of them
+
 ARENA_WIDTH, ARENA_HEIGHT = 800,300
 ROBOT_RADIUS = 6 
 N_ROBOTS = 120
-N_DEMANDS = 5
+N_DEMANDS = 25
 CONNECTION_DISTANCE = 120
 SENSE_RADIUS_R = 200        # big sensing radius (R)
 CONNECT_RADIUS_r = CONNECTION_DISTANCE  # connection radius (r)
@@ -23,8 +23,6 @@ K_LADDER = 0.8
 # === Debug reach logs ===
 DEMAND_FIRST_REACH = {}   # nombre_demand -> (robot_id, frame) first robot arrived
 DEMAND_REACHERS   = {}    # nombre_demand -> set(robot_id) of all reached
-PURPLE_FRAMES = 10  # frames to stay purple before removal
-
 
 
 # obstacles removed entirely
@@ -43,9 +41,9 @@ class Node:
         font = pygame.font.Font(None, 24)
         label = font.render(self.name, True, (0, 0, 0))
         screen.blit(label, (self.x + 10, self.y - 10))
-"""
+
 def check_and_color_robots(robots, demands, frame=None):
-    #Marca at_demand=True y loguea SOLO cuando realmente toca la demand
+    """Marca at_demand=True y loguea SOLO cuando realmente toca la demand."""
     global DEMAND_FIRST_REACH, DEMAND_REACHERS
 
     for r in robots:
@@ -77,44 +75,6 @@ def check_and_color_robots(robots, demands, frame=None):
                             print("[SUMMARY] First reach per demand:", summary)
                 break  # no sigas chequeando más demands para este robot
 
-"""
-def remove_robots_at_demands(robots, demands, frame=None):
-    """Pone morado a los que llegan y los elimina tras PURPLE_FRAMES."""
-    global DEMAND_FIRST_REACH, DEMAND_REACHERS
-
-    survivors = []
-    for r in robots:
-        # ¿ya está programado para borrar?
-        remove_at = getattr(r, "remove_at", None)
-        if remove_at is not None and frame >= remove_at:
-            # ya cumplió su pausa morada → NO lo conservamos
-            continue
-
-        # si aún no está programado, revisa si tocó alguna demand
-        if remove_at is None:
-            for d in demands:
-                d_rad = getattr(d, "radius", 12)
-                if math.hypot(r.x - d.x, r.y - d.y) <= d_rad + ROBOT_RADIUS:
-                    # 1) morado inmediato
-                    r.at_demand = True
-                    # 2) programar eliminación
-                    r.remove_at = frame + PURPLE_FRAMES
-
-                    # --- logging consistente (opcional) ---
-                    nm = d.name
-                    DEMAND_REACHERS.setdefault(nm, set())
-                    DEMAND_FIRST_REACH.setdefault(nm, None)
-                    if r.robot_id not in DEMAND_REACHERS[nm]:
-                        DEMAND_REACHERS[nm].add(r.robot_id)
-                        if DEMAND_FIRST_REACH[nm] is None:
-                            DEMAND_FIRST_REACH[nm] = (r.robot_id, frame)
-                            print(f"[REACHED-FIRST] {nm} reached by Robot {r.robot_id} at frame {frame}")
-                        else:
-                            print(f"[REACHED] {nm} also reached by Robot {r.robot_id} at frame {frame}")
-                    break  # ya no cheques otras demands
-
-        survivors.append(r)
-    return survivors
 
 def distance(a, b):
     return math.hypot(a.x - b.x, a.y - b.y)
@@ -1137,9 +1097,7 @@ def main():
             robots_in_union = set(n for n in path_S + sum(demand_paths.values(), []) if isinstance(n, Robot))
 
         # Range visually detected
-        #check_and_color_robots(robots, demands, frame)
-        robots = remove_robots_at_demands(robots, demands, frame)
-
+        check_and_color_robots(robots, demands, frame)
 
 
         
