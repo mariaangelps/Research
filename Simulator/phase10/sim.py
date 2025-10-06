@@ -15,8 +15,8 @@ CONNECTION_DISTANCE = 120
 SENSE_RADIUS_R = 200        # big sensing radius (R)
 CONNECT_RADIUS_r = CONNECTION_DISTANCE  # connection radius (r)
 STEP_MAX = 1.6              # max movement per frame 
-K_ATTR_ONPATH = 0.70        # attraction gain if robot is on the golden network
-K_ATTR_OFFPATH = 1.00       # weaker attraction if robot is outside
+K_ATTR_ONPATH = 1.00        # attraction gain if robot is on the golden network
+K_ATTR_OFFPATH = 1.2       # weaker attraction if robot is outside
 RECOMPUTE_EVERY = 10        # recompute pivot + paths every N frames
 SOURCE_NODE = None  # se setea en main() para uso dentro de apply_sink_attraction5
 K_LADDER = 0.8
@@ -28,10 +28,15 @@ ALIGN_DOT_THRESHOLD = 0.2      # >0 ⇒ direcciones ~alineadas ⇒ find_branch
 NETWORK_LEASH = int(CONNECTION_DISTANCE * 1.15)  # no despegarse de la red
 BRANCH_K = 0.9                  # empuje al seguir la red buscando rama
 DIRECT_K = 1.0                  # empuje al ir directo a la demand
-K_REPULSE_NEIGH  = 13   # fuerza de separación entre robots
-REPULSE_NEIGH_RADIUS = 20
+K_REPULSE_NEIGH  = 0.4   # fuerza de separación entre robots
+REPULSE_NEIGH_RADIUS = 24
 NOISE_EPS = 0.03         # ruido mínimo para romper simetrías (opcional)
 # --- Repulsión (target y entre robots) ---
+LOCK_ON_DEMAND = False     # False = reciclar robots (no se congelan)
+COOLDOWN_FRAMES = 6        # frames morado antes de decidir y seguir moviéndose
+K_TO_NET      = 0.9
+K_DRIFT_SRC   = 0.5
+K_LEASH       = 0.7
 
 
 # obstacles removed entirely
@@ -51,8 +56,8 @@ class Node:
         label = font.render(self.name, True, (0, 0, 0))
         screen.blit(label, (self.x + 10, self.y - 10))
 
+
 def check_and_color_robots(robots, demands, frame=None):
-    """Marca at_demand=True y loguea SOLO cuando realmente toca la demand."""
     global DEMAND_FIRST_REACH, DEMAND_REACHERS
 
     for r in robots:
@@ -61,15 +66,17 @@ def check_and_color_robots(robots, demands, frame=None):
         for d in demands:
             d_rad = getattr(d, "radius", 12)
             if math.hypot(r.x - d.x, r.y - d.y) <= d_rad + ROBOT_RADIUS:
-                # Se vuelve morado aquí
                 r.at_demand = True
+                # >>> NUEVO: pequeña pausa y marca de “recién tocada”
+                r.cooldown = COOLDOWN_FRAMES
+                r.just_touched = True
+                r.last_demand = d
+                # <<< FIN NUEVO
 
-                # Logging consistente con el morado
                 if frame is not None:
                     nm = d.name
                     DEMAND_REACHERS.setdefault(nm, set())
                     DEMAND_FIRST_REACH.setdefault(nm, None)
-
                     if r.robot_id not in DEMAND_REACHERS[nm]:
                         DEMAND_REACHERS[nm].add(r.robot_id)
                         if DEMAND_FIRST_REACH[nm] is None:
@@ -77,13 +84,10 @@ def check_and_color_robots(robots, demands, frame=None):
                             print(f"[REACHED-FIRST] {nm} reached by Robot {r.robot_id} at frame {frame}")
                         else:
                             print(f"[REACHED] {nm} also reached by Robot {r.robot_id} at frame {frame}")
-
-                        # (opcional) resumen cuando todas tengan primero
                         if all(DEMAND_FIRST_REACH[k] is not None for k in DEMAND_FIRST_REACH):
                             summary = {k: f"robot {v[0]} @frame {v[1]}" for k, v in DEMAND_FIRST_REACH.items()}
                             print("[SUMMARY] First reach per demand:", summary)
-                break  # no sigas chequeando más demands para este robot
-
+                break
 
 def distance(a, b):
     return math.hypot(a.x - b.x, a.y - b.y)
@@ -700,104 +704,6 @@ def rebuild_connections(robots, source, demands):
                 connect(rb, d, connections)
     return connections
 
-def apply_sink_attraction(robots, demands, robots_in_union, connections, current_frame=None):
-    """
-    - Los morados no se mueven.
-    - OFF-PATH: ve al nodo de red más cercano (o Source).
-    - ON-PATH: decide con dot(net, demand):
-         > ALIGN_DOT_THRESHOLD  -> find_branch  (seguir red + ligero empuje a demanda)
-         <= ALIGN_DOT_THRESHOLD -> connect_direct (ir directo a demanda)
-    - Siempre sin repulsión a la demanda. Solo repulsión entre robots para no pegarse.
-    """
-    global SOURCE_NODE, demand_paths
-    if SOURCE_NODE is None:
-        return
-
-    for rb in robots:
-        if getattr(rb, "at_demand", False):
-            continue  # morado = freeze
-
-        fx = fy = 0.0
-        on_path = (rb in robots_in_union)
-
-        # ---------- OBJETIVO PRINCIPAL ----------
-        if on_path:
-            # mejor demanda por hops (fallback: distancia)
-            d_best, _ = best_demand_for_robot(rb, demands)
-            if d_best is None:
-                d_best, _ = nearest_demand_and_dist(rb, demands)
-
-            # Decisión branch vs direct con tu regla del dot
-            mode = None; net = None; dem = d_best
-            if 'demand_paths' in globals():
-                choice = decide_branch_or_direct(rb, robots_in_union, demands, demand_paths)
-                if choice is not None:
-                    mode, net, dem = choice
-
-            if dem is None:
-                # si no hay demanda elegible, atrae a Source (raro)
-                tx, ty = SOURCE_NODE.x, SOURCE_NODE.y
-                k_main = K_ATTR_ONPATH
-                vx, vy = tx - rb.x, ty - rb.y
-                dist = math.hypot(vx, vy)
-                if dist > 1e-9:
-                    fx += k_main * (vx / dist)
-                    fy += k_main * (vy / dist)
-            else:
-                # vectores unitarios a red y demanda
-                ux_net = uy_net = 0.0
-                if net is not None:
-                    vn_x, vn_y = net.x - rb.x, net.y - rb.y
-                    mn = math.hypot(vn_x, vn_y)
-                    if mn > 1e-9:
-                        ux_net, uy_net = vn_x/mn, vn_y/mn
-
-                vd_x, vd_y = dem.x - rb.x, dem.y - rb.y
-                md = math.hypot(vd_x, vd_y)
-                ux_dem = vd_x/md if md > 1e-9 else 0.0
-                uy_dem = vd_y/md if md > 1e-9 else 0.0
-
-                if mode == "find_branch" and net is not None:
-                    # seguir la red + un pelín hacia demanda
-                    fx += BRANCH_K * ux_net + 0.35 * ux_dem
-                    fy += BRANCH_K * uy_net + 0.35 * uy_dem
-                else:
-                    # connect_direct (o sin info): ir directo a la demanda
-                    fx += DIRECT_K * ux_dem
-                    fy += DIRECT_K * uy_dem
-
-        else:
-            # OFF-PATH: acercarse a la red (o Source)
-            net, _ = nearest_on_network(rb, robots_in_union)
-            target = net if net is not None else SOURCE_NODE
-            vx, vy = target.x - rb.x, target.y - rb.y
-            dist = math.hypot(vx, vy)
-            if dist > 1e-9:
-                fx += K_ATTR_OFFPATH * (vx / dist)
-                fy += K_ATTR_OFFPATH * (vy / dist)
-
-        # ---------- REPULSIÓN ENTRE ROBOTS (solo separación local) ----------
-        for other in robots:
-            if other is rb:
-                continue
-            dxo = rb.x - other.x
-            dyo = rb.y - other.y
-            do = math.hypot(dxo, dyo)
-            if 1e-9 < do < REPULSE_NEIGH_RADIUS:
-                w = (REPULSE_NEIGH_RADIUS - do) / REPULSE_NEIGH_RADIUS
-                fx += K_REPULSE_NEIGH * w * (dxo / do)
-                fy += K_REPULSE_NEIGH * w * (dyo / do)
-
-        # ---------- PEQUEÑO RUIDO PARA DES-EMPATES ----------
-        fx += (random.random() - 0.5) * NOISE_EPS
-        fy += (random.random() - 0.5) * NOISE_EPS
-
-        # ---------- MOVER ----------
-        dx, dy = clamp_step(fx, fy, STEP_MAX)
-        rb.x = max(0, min(ARENA_WIDTH,  rb.x + dx))
-        rb.y = max(0, min(ARENA_HEIGHT, rb.y + dy))
-
-
 def best_demand_for_robot(rb, demands):
     """
     Devuelve (demand, hops) donde 'demand' minimiza los hops desde esa demanda al robot.
@@ -839,6 +745,130 @@ def neighbor_with_lower_hop_to_demand(rb, demand_name, connections):
     cand.sort(key=lambda t: (t[0], t[1], t[2]))
     return cand[0][3]
 
+def apply_sink_attraction(robots, demands, robots_in_union, connections, current_frame=None):
+    """
+    Política:
+      - Atracción a demanda (o a la red) + repulsión entre robots para evitar colisiones.
+      - OFF-PATH: mezcla "acércate a la red" + "deriva hacia el Source" (sí se mueven al Source).
+      - Si rb.at_demand:
+          * LOCK_ON_DEMAND == True  -> no atrae, pero SÍ repulsión para no apilarse.
+          * LOCK_ON_DEMAND == False -> espera cooldown (repulsión activa) y se recicla.
+    """
+    global SOURCE_NODE, demand_paths
+    if SOURCE_NODE is None:
+        return
+
+    # Defaults si no existen arriba
+    k_to_net    = globals().get('K_TO_NET', 0.9)     # seguir red estando fuera
+    k_drift_src = globals().get('K_DRIFT_SRC', 0.5)  # deriva constante hacia Source
+    k_leash     = globals().get('K_LEASH', 0.7)      # correa para no alejarse de la red
+
+    for rb in robots:
+        fx = fy = 0.0
+
+        # ---------- Estado: robot morado ----------
+        if getattr(rb, "at_demand", False):
+            cd = int(getattr(rb, "cooldown", 0))
+            if globals().get('LOCK_ON_DEMAND', False):
+                pass  # congelado a nivel de objetivo; repulsión se aplica más abajo
+            else:
+                if cd > 0:
+                    rb.cooldown = cd - 1  # pequeña pausa
+                else:
+                    # reciclaje: vuelve a moverse
+                    rb.at_demand = False
+                    rb.just_touched = False
+                    rb.last_demand = None
+
+        # ¿aplicamos atracción este frame?
+        do_attract = (not getattr(rb, "at_demand", False)) or \
+                     (not globals().get('LOCK_ON_DEMAND', False) and int(getattr(rb, "cooldown", 0)) == 0)
+
+        if do_attract:
+            on_path = (rb in robots_in_union)
+
+            if on_path:
+                # ---- ON-PATH: elegir demanda y decidir branch/direct ----
+                dem, _ = best_demand_for_robot(rb, demands)
+                if dem is None:
+                    dem, _ = nearest_demand_and_dist(rb, demands)
+
+                mode, net = "connect_direct", None
+                if 'demand_paths' in globals():
+                    choice = decide_branch_or_direct(rb, robots_in_union, demands, demand_paths)
+                    if choice is not None:
+                        mode, net, dem = choice
+
+                if dem is None:
+                    # fallback al Source
+                    vx, vy = SOURCE_NODE.x - rb.x, SOURCE_NODE.y - rb.y
+                    md = math.hypot(vx, vy)
+                    if md > 1e-9:
+                        fx += K_ATTR_ONPATH * (vx / md)
+                        fy += K_ATTR_ONPATH * (vy / md)
+                else:
+                    # unitarios a red y a demanda
+                    ux_net = uy_net = 0.0
+                    if net is not None:
+                        nvx, nvy = net.x - rb.x, net.y - rb.y
+                        mn = math.hypot(nvx, nvy)
+                        if mn > 1e-9:
+                            ux_net, uy_net = nvx / mn, nvy / mn
+
+                    dvx, dvy = dem.x - rb.x, dem.y - rb.y
+                    md = math.hypot(dvx, dvy)
+                    ux_dem = dvx / md if md > 1e-9 else 0.0
+                    uy_dem = dvy / md if md > 1e-9 else 0.0
+
+                    if mode == "find_branch" and net is not None:
+                        fx += BRANCH_K * ux_net + 0.35 * ux_dem
+                        fy += BRANCH_K * uy_net + 0.35 * uy_dem
+                    else:
+                        fx += DIRECT_K * ux_dem
+                        fy += DIRECT_K * uy_dem
+
+            else:
+                # ---- OFF-PATH: seguir red + deriva al Source + leash ----
+                net, _ = nearest_on_network(rb, robots_in_union)
+                if net is not None:
+                    nvx, nvy = net.x - rb.x, net.y - rb.y
+                    mn = math.hypot(nvx, nvy)
+                    if mn > 1e-9:
+                        fx += k_to_net * (nvx / mn)
+                        fy += k_to_net * (nvy / mn)
+
+                    # correa para no alejarse demasiado de la red
+                    lx, ly = leash_to_network(rb, robots_in_union, max_dist=NETWORK_LEASH)
+                    fx += k_leash * lx
+                    fy += k_leash * ly
+
+                # deriva constante hacia el Source (garantiza que sí se acerquen)
+                svx, svy = SOURCE_NODE.x - rb.x, SOURCE_NODE.y - rb.y
+                ms = math.hypot(svx, svy)
+                if ms > 1e-9:
+                    fx += k_drift_src * (svx / ms)
+                    fy += k_drift_src * (svy / ms)
+
+        # ---------- Repulsión virtual entre robots (colisión avoidance) ----------
+        for other in robots:
+            if other is rb:
+                continue
+            dx = rb.x - other.x
+            dy = rb.y - other.y
+            d = math.hypot(dx, dy)
+            if 1e-9 < d < REPULSE_NEIGH_RADIUS:
+                w = (REPULSE_NEIGH_RADIUS - d) / REPULSE_NEIGH_RADIUS
+                fx += K_REPULSE_NEIGH * w * (dx / d)
+                fy += K_REPULSE_NEIGH * w * (dy / d)
+
+        # ---------- Ruido pequeño para romper simetrías ----------
+        fx += (random.random() - 0.5) * NOISE_EPS
+        fy += (random.random() - 0.5) * NOISE_EPS
+
+        # ---------- Integración (paso acotado) ----------
+        dx, dy = clamp_step(fx, fy, STEP_MAX)
+        rb.x = max(0, min(ARENA_WIDTH,  rb.x + dx))
+        rb.y = max(0, min(ARENA_HEIGHT, rb.y + dy))
 
 
 def fmt_inf(v):
