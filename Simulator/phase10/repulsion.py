@@ -22,7 +22,7 @@ STEP_MAX = 2.4                     # max movement per frame
 
 K_ATTR_ONPATH = 0.70               # main attraction if robot is on golden network
 K_ATTR_OFFPATH = 1.00              # main attraction if robot is off the network
-K_LADDER = 0.8                     # on-path "ladder" to neighbors with lower hops
+K_LADDER = 2.0                     # on-path "ladder" to neighbors with lower hops
 
 RECOMPUTE_EVERY = 10               # recompute pivot + paths every N frames
 SOURCE_NODE = None                 # set in main()
