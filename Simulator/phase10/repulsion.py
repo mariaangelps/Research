@@ -18,16 +18,16 @@ N_DEMANDS = 25
 CONNECTION_DISTANCE = 120
 SENSE_RADIUS_R = 200               # big sensing radius (R)
 CONNECT_RADIUS_r = CONNECTION_DISTANCE   # connection radius (r)
-STEP_MAX = 2.4                  # max movement per frame
+STEP_MAX = 2.4                     # max movement per frame
 
-K_ATTR_ONPATH = 0.60               # main attraction if robot is on golden network
+K_ATTR_ONPATH = 0.70               # main attraction if robot is on golden network
 K_ATTR_OFFPATH = 1.00              # main attraction if robot is off the network
 K_LADDER = 0.8                     # on-path "ladder" to neighbors with lower hops
 
 RECOMPUTE_EVERY = 10               # recompute pivot + paths every N frames
 SOURCE_NODE = None                 # set in main()
 
-
+# Branch-vs-direct: tu regla exacta (dot > 0)
 ALIGN_DOT_THRESHOLD = 0.0
 
 NETWORK_LEASH = int(CONNECTION_DISTANCE * 1.15)  # keep close to network
@@ -46,9 +46,6 @@ MICRO_SEP         = 2*ROBOT_RADIUS + 2                # hard overlap guard
 # Optional: node halo repulsion (keeps a small buffer around source/demands)
 NODE_HALO_EXTRA   = 6
 NODE_HALO_K       = 0.6
-
-# ---- Anchor/Helper behavior ----
-ANCHOR_LOCK_RADIUS = 0.0  # 0.0 means fully locked (no drift)
 
 # Spring spacing between directly connected robot neighbors
 K_SPRING_ATTR   = 0.25                         # pull if farther than desired
@@ -75,7 +72,6 @@ class Node:
         self.y = y
         self.color = color
         self.radius = radius
-        self.anchor_robot = None  # first robot that touches becomes the anchor
 
     def draw(self, screen):
         pygame.draw.circle(screen, self.color, (int(self.x), int(self.y)), self.radius)
@@ -277,7 +273,7 @@ def robot_metric(rb, metric="total"):
         return getattr(rb, "total_overall", None)
 
 def is_local_minimum(rb, connections, metric="total"):
-    #True if rb.metric is strictly less than all neighbor robots' metrics.
+    """True if rb.metric is strictly less than all neighbor robots' metrics."""
     mv = robot_metric(rb, metric)
     if mv is None:
         return False
@@ -340,24 +336,21 @@ def nearest_demand_and_dist(p, demands):
 
 def decide_branch_or_direct(rb, robots_in_union, demands, demand_paths):
     """
-        if dot( dir_to_nearby_network_robot , dir_to_closest_unconnected_demand ) > 0:
-            choose "find_branch"
-        else:
-            choose "connect_direct"
+    if dot( dir_to_nearby_network_robot , dir_to_closest_unconnected_demand ) > 0:
+        choose "find_branch"
+    else:
+        choose "connect_direct"
     """
-    # unconnected demands
     unconn = [d for d in demands if not demand_paths.get(d)]
     if not unconn:
         return None
 
-    # closest unconnected demand
     dem = min(unconn, key=lambda d: math.hypot(d.x - rb.x, d.y - rb.y))
     v_dem = (dem.x - rb.x, dem.y - rb.y)
     mag_d = math.hypot(*v_dem)
     if mag_d < 1e-9:
         return ("connect_direct", None, dem)
 
-    # nearest network robot
     if not robots_in_union:
         return ("connect_direct", None, dem)
     net = min(robots_in_union, key=lambda r: math.hypot(r.x - rb.x, r.y - rb.y))
@@ -376,7 +369,7 @@ def decide_branch_or_direct(rb, robots_in_union, demands, demand_paths):
         return ("connect_direct", None, dem)
 
 def leash_to_network(rb, robots_in_union, max_dist=NETWORK_LEASH):
-    #Corrective vector to pull rb toward network if it drifts too far."""
+    """Corrective vector to pull rb toward network if it drifts too far."""
     net, d = nearest_on_network(rb, robots_in_union)
     if net is None or d <= max_dist:
         return (0.0, 0.0)
@@ -400,7 +393,6 @@ def propagate_local_hop_count(start_node, robots, connections, attr_hop, attr_pa
     q = deque()
     seen = set([start_node])
 
-    # seed: neighbors of start_node
     for nb in neighbors_of(start_node, connections):
         if isinstance(nb, Robot):
             setattr(nb, attr_hop, 1)
@@ -448,13 +440,11 @@ def pairwise_repulsion(rb, robots):
 
         dist = math.hypot(dx, dy)
         if dist <= 1e-9:
-            # identical position → tiny random nudge
             jitter = 0.5
             fx += (random.random()-0.5) * jitter
             fy += (random.random()-0.5) * jitter
             continue
 
-        # Hard overlap guard
         if dist < MICRO_SEP:
             ux, uy = dx/dist, dy/dist
             kick = K_REPULSION * (MICRO_SEP - dist) / MICRO_SEP
@@ -462,7 +452,6 @@ def pairwise_repulsion(rb, robots):
             fy += 3.0 * kick * uy
             continue
 
-        # Soft linear ramp inside desired spacing
         if dist < DESIRED_GAP:
             ux, uy = dx/dist, dy/dist
             mag = K_REPULSION * (1.0 - dist / DESIRED_GAP)
@@ -472,7 +461,7 @@ def pairwise_repulsion(rb, robots):
     return fx, fy
 
 def node_repulsion(rb, nodes, desired=MICRO_SEP+NODE_HALO_EXTRA, k=NODE_HALO_K):
-    #Small buffer around source/demand nodes (optional)."""
+    """Small buffer around source/demand nodes (optional)."""
     fx = fy = 0.0
     for n in nodes:
         dx, dy = rb.x - n.x, rb.y - n.y
@@ -493,7 +482,6 @@ def edge_spacing_force(rb, connections):
     - If SPRING_DESIRED <= dist < SPRING_MAX_DIST: pull together (cohere)
     """
     fx = fy = 0.0
-    # collect robot neighbors
     neigh = []
     for a, b in connections:
         if a is rb and isinstance(b, Robot):
@@ -510,16 +498,13 @@ def edge_spacing_force(rb, connections):
         ux, uy = dx/dist, dy/dist
 
         if dist < SPRING_DESIRED:
-            # too close → push away
             mag = K_SPRING_REPEL * (1.0 - dist/SPRING_DESIRED)
             fx -= mag * ux
             fy -= mag * uy
         elif dist < SPRING_MAX_DIST:
-            # too far but still in comms → pull together
             mag = K_SPRING_ATTR * ((dist - SPRING_DESIRED) / (SPRING_MAX_DIST - SPRING_DESIRED + 1e-6))
             fx += mag * ux
             fy += mag * uy
-        # else: beyond comms ⇒ no spring pull
     return fx, fy
 
 
@@ -528,60 +513,38 @@ def edge_spacing_force(rb, connections):
 # =====================================================================
 
 def check_and_color_robots(robots, demands, frame=None):
-    """
-    - First robot to touch a demand becomes its ANCHOR: locked in place.
-    - Later robots that touch same demand become HELPERS: purple but still free to move.
-    """
+    """Marca at_demand=True y loguea la llegada; NO bloquea robots."""
     global DEMAND_FIRST_REACH, DEMAND_REACHERS
 
     for r in robots:
-        # If already an anchor, nothing to do
-        if getattr(r, "anchor_locked", False):
-            continue
+        # Si ya se marcó como en demanda, igual puede seguir moviéndose
+        if getattr(r, "at_demand", False):
+            continue  # ya está marcado; evita spam del log
 
-        # Detect demand contact
-        touched = None
         for d in demands:
             d_rad = getattr(d, "radius", 12)
             if math.hypot(r.x - d.x, r.y - d.y) <= d_rad + ROBOT_RADIUS:
-                touched = d
+                r.at_demand = True  # se pinta (naranja) pero sigue ayudando
+
+                if frame is not None:
+                    nm = d.name
+                    DEMAND_REACHERS.setdefault(nm, set())
+                    DEMAND_FIRST_REACH.setdefault(nm, None)
+                    if r.robot_id not in DEMAND_REACHERS[nm]:
+                        DEMAND_REACHERS[nm].add(r.robot_id)
+                        if DEMAND_FIRST_REACH[nm] is None:
+                            DEMAND_FIRST_REACH[nm] = (r.robot_id, frame)
+                            print(f"[REACHED-FIRST] {nm} reached by Robot {r.robot_id} at frame {frame}")
+                        else:
+                            print(f"[REACHED] {nm} also reached by Robot {r.robot_id} at frame {frame}")
+                        if all(DEMAND_FIRST_REACH[k] is not None for k in DEMAND_FIRST_REACH):
+                            summary = {k: f"robot {v[0]} @frame {v[1]}" for k, v in DEMAND_FIRST_REACH.items()}
+                            print("[SUMMARY] First reach per demand:", summary)
                 break
-
-        if touched is None:
-            continue
-
-        # Mark purple
-        r.at_demand = True
-
-        # If the demand has no anchor yet -> lock this robot as anchor
-        if getattr(touched, "anchor_robot", None) is None:
-            touched.anchor_robot = r
-            r.anchor_locked = True   # this one will no longer move
-        else:
-            # helper purple (still moves)
-            r.anchor_locked = False
-            r.helper_mode = True
-
-        # Logs
-        if frame is not None:
-            nm = touched.name
-            DEMAND_REACHERS.setdefault(nm, set())
-            DEMAND_FIRST_REACH.setdefault(nm, None)
-            if r.robot_id not in DEMAND_REACHERS[nm]:
-                DEMAND_REACHERS[nm].add(r.robot_id)
-                if DEMAND_FIRST_REACH[nm] is None:
-                    DEMAND_FIRST_REACH[nm] = (r.robot_id, frame)
-                    print(f"[REACHED-FIRST] {nm} reached by Robot {r.robot_id} at frame {frame}")
-                else:
-                    print(f"[REACHED] {nm} also reached by Robot {r.robot_id} at frame {frame}")
-                if all(DEMAND_FIRST_REACH[k] is not None for k in DEMAND_FIRST_REACH):
-                    summary = {k: f"robot {v[0]} @frame {v[1]}" for k, v in DEMAND_FIRST_REACH.items()}
-                    print("[SUMMARY] First reach per demand:", summary)
 
 def apply_sink_attraction(robots, demands, robots_in_union, connections, current_frame=None):
     """
     Move robots using combined fields:
-    - Skip only ANCHOR robots (helpers keep moving even if purple).
     - On-path: target best demand by hops + ladder + branch/direct + leash.
     - Off-path: attracted to nearest network node (fallback: Source).
     - Repulsion + edge springs + node halo enforce spacing.
@@ -591,10 +554,6 @@ def apply_sink_attraction(robots, demands, robots_in_union, connections, current
         return
 
     for rb in robots:
-        # Skip ONLY the locked anchor robots
-        if getattr(rb, "anchor_locked", False):
-            continue
-
         # === 1) Main target and base attraction ===
         if rb in robots_in_union:
             target_d, _ = best_demand_for_robot(rb, demands)
@@ -607,7 +566,6 @@ def apply_sink_attraction(robots, demands, robots_in_union, connections, current
             target = nt if nt is not None else SOURCE_NODE
             k_main = K_ATTR_OFFPATH
 
-        # Base donut attraction
         fx = fy = 0.0
         dist = math.hypot(target.x - rb.x, target.y - rb.y)
         if CONNECT_RADIUS_r < dist < SENSE_RADIUS_R:
@@ -615,7 +573,6 @@ def apply_sink_attraction(robots, demands, robots_in_union, connections, current
             fx = k_main * vx / (dist + 1e-6)
             fy = k_main * vy / (dist + 1e-6)
 
-        # Slight nudge when off-path and already within r
         if rb not in robots_in_union and dist <= CONNECT_RADIUS_r:
             vx, vy = (target.x - rb.x), (target.y - rb.y)
             fx += 0.18 * vx / (dist + 1e-6)
@@ -627,7 +584,6 @@ def apply_sink_attraction(robots, demands, robots_in_union, connections, current
             dname = d_best.name if d_best else None
             nxt = neighbor_with_lower_hop_to_demand(rb, dname, connections)
 
-            # ladder toward neighbor with lower hop-to-demand
             if nxt is not None:
                 dx, dy = (nxt.x - rb.x), (nxt.y - rb.y)
                 mag = math.hypot(dx, dy)
@@ -635,7 +591,6 @@ def apply_sink_attraction(robots, demands, robots_in_union, connections, current
                     fx += K_LADDER * dx / mag
                     fy += K_LADDER * dy / mag
             else:
-                # fallback: point directly at best demand
                 if d_best is not None:
                     vx2, vy2 = (d_best.x - rb.x), (d_best.y - rb.y)
                     dist2 = math.hypot(vx2, vy2)
@@ -643,7 +598,6 @@ def apply_sink_attraction(robots, demands, robots_in_union, connections, current
                         fx += K_LADDER * vx2 / dist2
                         fy += K_LADDER * vy2 / dist2
 
-            # branch or direct using your dot>0 rule
             decision = decide_branch_or_direct(rb, robots_in_union, demands, demand_paths)
             if decision is not None:
                 mode, net_target, dem_target = decision
@@ -665,16 +619,13 @@ def apply_sink_attraction(robots, demands, robots_in_union, connections, current
                         fx += DIRECT_K * dxd / dd
                         fy += DIRECT_K * dyd / dd
 
-            # network leash
             lx, ly = leash_to_network(rb, robots_in_union, NETWORK_LEASH)
             fx += lx
             fy += ly
 
         # === 3) Repulsion & spacing ===
-        # (a) pairwise repulsion (collision preventer)
         rfx, rfy = pairwise_repulsion(rb, robots)
 
-        # cap repulsion relative to attraction so mission pull stays primary
         rep_mag = math.hypot(rfx, rfy)
         att_mag = math.hypot(fx, fy)
         if rep_mag > 1e-9:
@@ -685,12 +636,10 @@ def apply_sink_attraction(robots, demands, robots_in_union, connections, current
         fx += rfx
         fy += rfy
 
-        # (b) edge springs: too close -> repel; too far (within comms) -> pull
         sfx, sfy = edge_spacing_force(rb, connections)
         fx += sfx
         fy += sfy
 
-        # (c) optional small halo around nodes
         nrx, nry = node_repulsion(rb, [SOURCE_NODE] + demands,
                                   desired=MICRO_SEP + NODE_HALO_EXTRA,
                                   k=NODE_HALO_K)
@@ -700,21 +649,18 @@ def apply_sink_attraction(robots, demands, robots_in_union, connections, current
         # === 4) Clamp + light damping (reduce jitter) ===
         dx, dy = clamp_step(fx, fy, STEP_MAX)
 
-        # keep simple velocity memory on robot
         if not hasattr(rb, "vx"):
             rb.vx, rb.vy = 0.0, 0.0
-        alpha = 0.65   # weight for new acceleration
-        beta  = 0.20   # damping on previous velocity
+        alpha = 0.65
+        beta  = 0.20
         rb.vx = beta*rb.vx + alpha*dx
         rb.vy = beta*rb.vy + alpha*dy
 
-        # final clamp to STEP_MAX
         mv = math.hypot(rb.vx, rb.vy)
         if mv > STEP_MAX:
             s = STEP_MAX / mv
             rb.vx *= s; rb.vy *= s
 
-        # apply move within bounds
         rb.x = max(0, min(ARENA_WIDTH,  rb.x + rb.vx))
         rb.y = max(0, min(ARENA_HEIGHT, rb.y + rb.vy))
 
@@ -724,10 +670,6 @@ def apply_sink_attraction(robots, demands, robots_in_union, connections, current
 # =====================================================================
 
 def best_demand_for_robot(rb, demands):
-    """
-    Returns (demand, hops) minimizing hops from that demand to robot.
-    (None, None) if undefined.
-    """
     if not hasattr(rb, "demand_hops") or not rb.demand_hops:
         return (None, None)
     best_nm, best_h = None, None
@@ -930,7 +872,7 @@ def main():
                 path_S = []
                 demand_paths = {d: [] for d in demands}
 
-        # 4) Range visually detected (color arrivals + anchor/helper)
+        # 4) Llega a demandas (marcar naranja y log)
         check_and_color_robots(robots, demands, frame)
 
         # 5) Draw
@@ -944,13 +886,11 @@ def main():
         for d, p in demand_paths.items():
             draw_poly(p, (255, 0, 0), 3)
 
-        # colors: anchor deep purple, helper purple, on-chain green, off-chain blue
+        # colors: helper orange (mueve siempre), on-chain green, off-chain blue
         robots_in_union = set(n for n in path_S + sum(demand_paths.values(), []) if isinstance(n, Robot))
         for rb in robots:
-            if getattr(rb, "anchor_locked", False):
-                color = (90, 0, 90)           # dark purple (anchor)
-            elif getattr(rb, "at_demand", False):
-                color = (128, 0, 128)         # helper purple (still moves)
+            if getattr(rb, "at_demand", False):
+                color = (128, 0, 0)         # helper orange (still moves)
             elif rb in robots_in_union:
                 color = (0, 200, 0)           # green on golden chain
             else:
