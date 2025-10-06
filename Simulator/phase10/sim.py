@@ -10,7 +10,7 @@ import time
 ARENA_WIDTH, ARENA_HEIGHT = 800,300
 ROBOT_RADIUS = 6 
 N_ROBOTS = 120
-N_DEMANDS = 25
+N_DEMANDS = 5
 CONNECTION_DISTANCE = 120
 SENSE_RADIUS_R = 200        # big sensing radius (R)
 CONNECT_RADIUS_r = CONNECTION_DISTANCE  # connection radius (r)
@@ -28,6 +28,7 @@ ALIGN_DOT_THRESHOLD = 0.2      # >0 ⇒ direcciones ~alineadas ⇒ find_branch
 NETWORK_LEASH = int(CONNECTION_DISTANCE * 1.15)  # no despegarse de la red
 BRANCH_K = 0.9                  # empuje al seguir la red buscando rama
 DIRECT_K = 1.0                  # empuje al ir directo a la demand
+
 
 
 # obstacles removed entirely
@@ -698,99 +699,94 @@ def rebuild_connections(robots, source, demands):
 
 def apply_sink_attraction(robots, demands, robots_in_union, connections, current_frame=None):
     """
-    Mueve SOLO a robots que aún no llegaron a una demanda (no morados).
-    - ON-PATH: demanda correcta por hops + escalera + branch/direct + rienda.
-    - OFF-PATH: atraídos al nodo de red más cercano (fallback: Source).
-    Usa donut (r,R) y clamp STEP_MAX.
+    ONE-FILE / BEGINNER:
+    - Robots que ya tocaron una demand (morados) no se mueven.
+    - OFF-PATH: primero ve hacia el nodo de red más cercano (o Source).
+    - ON-PATH: usa ladder por hops + decide branch/direct por producto punto + leash.
+    - Donut r–R: atrae solo si CONNECT_RADIUS_r < dist < SENSE_RADIUS_R.
     """
     global SOURCE_NODE, demand_paths
     if SOURCE_NODE is None:
         return
 
     for rb in robots:
-        # --- Si ya tocó una demanda (morado), no se mueve ---
+        # 0) Ya llegó → quieto
         if getattr(rb, "at_demand", False):
             continue
 
-        # === 1) Objetivo principal ===
-        if rb in robots_in_union:
-            target_d, _ = best_demand_for_robot(rb, demands)
+        fx = fy = 0.0
+        on_path = (rb in robots_in_union)
+
+        # 1) Objetivo principal (ON vs OFF path)
+        if on_path:
+            target_d, _ = best_demand_for_robot(rb, demands)  # mejor demand por hops
             if target_d is None:
                 target_d, _ = nearest_demand_and_dist(rb, demands)
-            target = target_d
+            target = target_d if target_d is not None else SOURCE_NODE
             k_main = K_ATTR_ONPATH
         else:
             nt, _ = nearest_on_network(rb, robots_in_union)
             target = nt if nt is not None else SOURCE_NODE
             k_main = K_ATTR_OFFPATH
 
-        # === 2) Fuerza principal con donut ===
-        dist = math.hypot(target.x - rb.x, target.y - rb.y)
-        if CONNECT_RADIUS_r < dist < SENSE_RADIUS_R:
+        # 2) Fuerza principal con “donut” r–R
+        dist_main = math.hypot(target.x - rb.x, target.y - rb.y)
+        if CONNECT_RADIUS_r < dist_main < SENSE_RADIUS_R:
             vx, vy = (target.x - rb.x), (target.y - rb.y)
-            fx = k_main * vx / (dist + 1e-6)
-            fy = k_main * vy / (dist + 1e-6)
-        else:
-            fx = fy = 0.0
-
-        # NUDGE solo OFF-PATH si ya está dentro de r (evita quedarse congelado)
-        if rb not in robots_in_union and dist <= CONNECT_RADIUS_r:
+            fx += k_main * vx / (dist_main + 1e-6)
+            fy += k_main * vy / (dist_main + 1e-6)
+        elif (not on_path) and dist_main <= CONNECT_RADIUS_r:
+            # pequeño empujón si ya está pegado a red siendo OFF-PATH
             vx, vy = (target.x - rb.x), (target.y - rb.y)
-            fx += 0.18 * vx / (dist + 1e-6)
-            fy += 0.18 * vy / (dist + 1e-6)
+            fx += 0.18 * vx / (dist_main + 1e-6)
+            fy += 0.18 * vy / (dist_main + 1e-6)
 
-        # === 3) ON-PATH: escalera + decisión branch/direct + rienda ===
-        if rb in robots_in_union:
+        # 3) Lógica extra solo si está en la red (ON-PATH)
+        if on_path:
+            # 3a) Ladder: busca vecino con menor hop hacia la demand elegida
             d_best, _ = best_demand_for_robot(rb, demands)
             dname = d_best.name if d_best else None
             nxt = neighbor_with_lower_hop_to_demand(rb, dname, connections)
-
             if nxt is not None:
                 dx, dy = (nxt.x - rb.x), (nxt.y - rb.y)
                 mag = math.hypot(dx, dy)
                 if mag > 1e-9:
                     fx += K_LADDER * dx / mag
                     fy += K_LADDER * dy / mag
-            else:
-                if d_best is not None:
-                    vx2, vy2 = (d_best.x - rb.x), (d_best.y - rb.y)
-                    dist2 = math.hypot(vx2, vy2)
-                    if dist2 > 1e-6:
-                        fx += K_LADDER * vx2 / dist2
-                        fy += K_LADDER * vy2 / dist2
+            elif d_best is not None:
+                # fallback: un empujón suave hacia la demand
+                dx, dy = (d_best.x - rb.x), (d_best.y - rb.y)
+                mag = math.hypot(dx, dy)
+                if mag > 1e-9:
+                    fx += 0.35 * dx / mag
+                    fy += 0.35 * dy / mag
 
-            try:
-                decision = decide_branch_or_direct(rb, robots_in_union, demands, demand_paths)
-            except NameError:
-                decision = None
+            # 3b) Decisión branch vs direct usando producto punto (sin helpers extra)
+            net, _ = nearest_on_network(rb, robots_in_union)
+            dem = d_best
+            if net is not None and dem is not None:
+                vn = (net.x - rb.x, net.y - rb.y)
+                vd = (dem.x - rb.x, dem.y - rb.y)
+                mn = math.hypot(*vn); md = math.hypot(*vd)
+                if mn > 1e-9 and md > 1e-9:
+                    un = (vn[0]/mn, vn[1]/mn)   # unit hacia red
+                    ud = (vd[0]/md, vd[1]/md)   # unit hacia demand
+                    dot = un[0]*ud[0] + un[1]*ud[1]
+                    if dot > ALIGN_DOT_THRESHOLD:
+                        # find_branch: seguir la red + un poco hacia demand
+                        fx += BRANCH_K * un[0] + 0.35 * ud[0]
+                        fy += BRANCH_K * un[1] + 0.35 * ud[1]
+                    else:
+                        # connect_direct: ir directo a la demand
+                        fx += DIRECT_K * ud[0]
+                        fy += DIRECT_K * ud[1]
 
-            if decision is not None:
-                mode, net_target, dem_target = decision
+            # 3c) Rienda: no despegarse de la red
+            lx, ly = leash_to_network(rb, robots_in_union, NETWORK_LEASH)
+            fx += lx
+            fy += ly
 
-                if mode == "find_branch" and net_target is not None and dem_target is not None:
-                    dxn, dyn = net_target.x - rb.x, net_target.y - rb.y
-                    dn = math.hypot(dxn, dyn)
-                    if dn > 1e-9:
-                        fx += BRANCH_K * dxn / dn
-                        fy += BRANCH_K * dyn / dn
-                    dxd, dyd = dem_target.x - rb.x, dem_target.y - rb.y
-                    dd = math.hypot(dxd, dyd)
-                    if dd > 1e-9:
-                        fx += 0.35 * dxd / dd
-                        fy += 0.35 * dyd / dd
-
-                elif mode == "connect_direct" and dem_target is not None:
-                    dxd, dyd = dem_target.x - rb.x, dem_target.y - rb.y
-                    dd = math.hypot(dxd, dyd)
-                    if dd > 1e-9:
-                        fx += DIRECT_K * dxd / dd
-                        fy += DIRECT_K * dyd / dd
-
-                lx, ly = leash_to_network(rb, robots_in_union, NETWORK_LEASH)
-                fx += lx
-                fy += ly
-
-        # === 4) Clamp y mover ===
+        # 4) Clamp y mover
         dx, dy = clamp_step(fx, fy, STEP_MAX)
         rb.x = max(0, min(ARENA_WIDTH,  rb.x + dx))
         rb.y = max(0, min(ARENA_HEIGHT, rb.y + dy))
